@@ -113,6 +113,16 @@ button, input, textarea, a { font-family: inherit; }
   background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-sm);
 }
 .side-brand .logo svg { width: 19px; height: 19px; }
+
+/* logo bằng ảnh (vẹt) — dùng mask để ăn theo currentColor như icon SVG */
+.animal-img {
+  display: block; background: currentColor;
+  -webkit-mask: url(/parrot.png) center / contain no-repeat;
+  mask: url(/parrot.png) center / contain no-repeat;
+}
+.side-brand .logo .animal-img { width: 24px; height: 24px; }
+.welcome .w-logo .animal-img { width: 40px; height: 40px; }
+.msg .avatar .animal-img { width: 22px; height: 22px; }
 .side-brand strong { font-weight: 650; letter-spacing: -.01em; font-size: 15px; }
 
 .side-nav { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
