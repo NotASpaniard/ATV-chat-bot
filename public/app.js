@@ -370,24 +370,30 @@ async function send() {
 
     // Hiện chữ dần, đều theo từng khung hình -> mượt, không nhảy
     botBubble.classList.add('streaming');
+    // Tắt cuộn-mượt CSS trong lúc stream: nếu không, đặt scrollTop mỗi khung sẽ
+    // kích hoạt animation cuộn chồng nhau -> rất giật.
+    messagesEl.style.scrollBehavior = 'auto';
     await new Promise((resolve) => {
-      const nearBottom = () => messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 140;
+      let autoStick = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 140;
+      // Người dùng cuộn lên thì ngừng tự bám đáy; cuộn lại xuống đáy thì bám tiếp
+      const onScroll = () => { autoStick = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 140; };
+      messagesEl.addEventListener('scroll', onScroll, { passive: true });
       const tick = () => {
         if (shown < acc.length) {
           const backlog = acc.length - shown;
           const step = Math.max(2, Math.ceil(backlog / 8)); // đuổi kịp khi model nhanh, vẫn mượt khi chậm
           shown = Math.min(acc.length, shown + step);
-          const stick = nearBottom();
           botBubble.textContent = acc.slice(0, shown);
-          if (stick) messagesEl.scrollTop = messagesEl.scrollHeight;
+          if (autoStick) messagesEl.scrollTop = messagesEl.scrollHeight;
         }
-        if (streamDone && shown >= acc.length) return resolve();
+        if (streamDone && shown >= acc.length) { messagesEl.removeEventListener('scroll', onScroll); return resolve(); }
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
     });
     await pump;
     botBubble.classList.remove('streaming');
+    messagesEl.style.scrollBehavior = ''; // trả lại cuộn-mượt cho thao tác thường
     if (pumpErr) throw pumpErr;
     if (acc.trim()) {
       history.push({ role: 'assistant', content: acc });
