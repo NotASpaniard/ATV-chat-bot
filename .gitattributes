@@ -1,0 +1,11 @@
+# Chuẩn hóa xuống dòng: để git tự quản, tránh cảnh báo LF/CRLF.
+* text=auto
+
+# Giữ CRLF cho script Windows (chạy trên Windows).
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# File nhị phân - không đụng vào.
+*.png binary
+*.zip binary
+*.pdf binary

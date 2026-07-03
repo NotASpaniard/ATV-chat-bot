@@ -1,0 +1,18 @@
+# Postgres + pgvector cho AVT Chat Bot (Bước 2)
+# Chỉ mở cổng ra localhost (127.0.0.1) — không lộ ra mạng ngoài.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: avt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: avtchat
+      POSTGRES_USER: avt
+      POSTGRES_PASSWORD: avt_local_pw
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - avt_pgdata:/var/lib/postgresql/data
+
+volumes:
+  avt_pgdata:

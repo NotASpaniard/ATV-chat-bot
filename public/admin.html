@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AVT Chat Bot — Quản trị dữ liệu</title>
+  <script>
+    (function () { var t = localStorage.getItem('avt-theme'); if (['light','dark','coffee'].indexOf(t) < 0) t = 'light'; document.documentElement.setAttribute('data-theme', t); })();
+  </script>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/admin.css" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#6a83ef" />
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+    }
+  </script>
+</head>
+<body>
+  <div id="shell">
+    <aside id="sidebar">
+      <div class="side-brand">
+        <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4z"/><path d="M18 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>
+        </span>
+        <strong>AVT Chat Bot</strong>
+      </div>
+
+      <nav class="side-nav">
+        <a class="side-link" href="/">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>Trò chuyện</span>
+        </a>
+        <a class="side-link active" href="/admin.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M4 12h16M4 18h7"/><circle cx="17" cy="6" r="2"/><circle cx="14" cy="18" r="2"/></svg>
+          <span>Quản trị dữ liệu</span>
+        </a>
+      </nav>
+
+      <div class="side-spacer"></div>
+      <div class="side-foot">
+        <button id="theme-btn" class="icon-btn" type="button" title="Đổi giao diện"></button>
+        <button id="mem-btn" class="icon-btn" type="button" title="Ghi nhớ giữa các cuộc hội thoại"></button>
+      </div>
+    </aside>
+
+    <main id="main">
+    <div class="admin-main">
+      <div class="tabs">
+        <button class="tab active" data-tab="manual">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+          <span>Nhập tay</span>
+        </button>
+        <button class="tab" data-tab="file">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V7"/><path d="M8 11l4-4 4 4"/><path d="M20 16.5A3.5 3.5 0 0 0 18 10h-1.3A6 6 0 1 0 6 15.7"/></svg>
+          <span>Tải file</span>
+        </button>
+        <button class="tab" data-tab="data">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+          <span>Dữ liệu đã lưu</span>
+        </button>
+        <button class="tab" data-tab="model">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>
+          <span>Model</span>
+        </button>
+        <button class="tab" data-tab="rules">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-3 8-7 10-4-2-7-5.6-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
+          <span>Bộ luật</span>
+        </button>
+        <button class="tab" data-tab="tpl">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v4H4z"/><path d="M4 12h10M4 17h10"/></svg>
+          <span>Mẫu</span>
+        </button>
+        <button class="tab" data-tab="status">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+          <span>Trạng thái</span>
+        </button>
+      </div>
+
+      <!-- THANH 1: NHẬP TAY LINH HOẠT -->
+      <section class="panel-box tab-content" id="tab-manual">
+        <h3>Nhập dữ liệu — tự định nghĩa trường</h3>
+        <p class="sub">Bạn tự thêm bao nhiêu trường tùy ý (VD: Tên, Đơn giá, Bảo hành, Màu sắc…). Không bị đóng cứng mẫu nào.</p>
+        <form id="man-form">
+          <label>Nhóm dữ liệu (tùy chọn)</label>
+          <input id="man-collection" placeholder="VD: Bảng giá nội thất" />
+          <label>Các trường</label>
+          <div id="man-fields"></div>
+          <button type="button" id="man-add" class="btn-ghost">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            <span>Thêm trường</span>
+          </button>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary">Lưu bản ghi</button>
+            <span class="status" id="man-status"></span>
+          </div>
+        </form>
+      </section>
+
+      <!-- THANH 2: TẢI FILE -->
+      <section class="panel-box tab-content hidden" id="tab-file">
+        <h3>Tải file lên</h3>
+        <p class="sub">
+          <b>Excel/CSV</b> → mỗi dòng thành một bản ghi (cột = tên trường). &nbsp;
+          <b>PDF / Word / TXT</b> → trích nội dung vào kho tri thức cho bot.
+          <br>Tối đa <b>200MB</b> mỗi file. Có thể tải <b>nhiều file cùng lúc</b> — mỗi file một ô, chọn file vào một ô sẽ hiện ô mới bên dưới.
+        </p>
+        <div id="upload-cards"></div>
+      </section>
+
+      <!-- DỮ LIỆU ĐÃ LƯU -->
+      <section class="panel-box tab-content hidden" id="tab-data">
+        <h3>Bản ghi</h3>
+        <div id="rec-list" class="data-list">Đang tải…</div>
+        <h3 class="mt">Tài liệu (kho tri thức)</h3>
+        <div id="doc-list" class="data-list">Đang tải…</div>
+      </section>
+
+      <!-- MODEL -->
+      <section class="panel-box tab-content hidden" id="tab-model">
+        <h3>Quản lý model AI</h3>
+        <p class="sub">Chọn model đang dùng để trả lời, tải model mới về, hoặc xóa model không cần. Model nhỏ chạy nhanh hơn; model lớn thông minh hơn (cần máy mạnh/GPU).</p>
+        <div id="model-list" class="data-list">Đang tải…</div>
+
+        <h3 class="mt">Tải model mới</h3>
+        <p class="sub">Gõ tên model rồi bấm Tải (cần mạng lần đầu). Gợi ý bấm vào để điền nhanh:</p>
+        <div class="chips" id="model-suggest"></div>
+        <div class="model-pull">
+          <input id="pull-name" placeholder="VD: qwen2.5:7b" />
+          <button id="pull-btn" class="btn-primary" type="button">Tải model</button>
+        </div>
+        <div id="pull-progress" class="ptext"></div>
+      </section>
+
+      <!-- BỘ LUẬT -->
+      <section class="panel-box tab-content hidden" id="tab-rules">
+        <h3>Bộ luật cho chatbot</h3>
+        <p class="sub">Các quy tắc này được áp vào <b>mọi câu trả lời</b> (ví dụ: trả lời ngắn gọn, không lan man, không bịa…). Mỗi dòng một quy tắc. Sửa xong bấm Lưu.</p>
+        <textarea id="rules-text" rows="12" placeholder="Đang tải…"></textarea>
+        <div class="form-actions">
+          <button id="rules-save" class="btn-primary" type="button">Lưu bộ luật</button>
+          <span class="status" id="rules-status"></span>
+        </div>
+      </section>
+
+      <!-- MẪU CÂU LỆNH -->
+      <section class="panel-box tab-content hidden" id="tab-tpl">
+        <h3>Mẫu câu lệnh</h3>
+        <p class="sub">Mẫu để điền nhanh khi chat. Dùng <b>{{...}}</b> cho chỗ cần điền (VD: {{tên khách}}). Ở khung chat bấm nút <b>Mẫu</b> để chèn.</p>
+        <div id="tpl-editor"></div>
+        <button id="tpl-add" class="btn-ghost" type="button" style="margin-top:10px">+ Thêm mẫu</button>
+        <div class="form-actions">
+          <button id="tpl-save" class="btn-primary" type="button">Lưu tất cả</button>
+          <span class="status" id="tpl-status"></span>
+        </div>
+      </section>
+
+      <!-- TRẠNG THÁI -->
+      <section class="panel-box tab-content hidden" id="tab-status">
+        <h3>Trạng thái hệ thống</h3>
+        <p class="sub">Cập nhật mỗi 5 giây khi mở tab này.</p>
+        <div id="status-body">Đang tải…</div>
+      </section>
+    </div>
+    </main>
+  </div>
+
+  <script src="/theme.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>

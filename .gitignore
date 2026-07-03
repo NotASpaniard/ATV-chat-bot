@@ -1,0 +1,38 @@
+# ===== Bí mật / cấu hình máy =====
+.env
+.env.local
+
+# ===== DỮ LIỆU NGHIỆP VỤ - TUYỆT ĐỐI KHÔNG ĐẨY LÊN GIT =====
+# pgdata chứa báo giá / hợp đồng / lịch sử chat -> không được rời mạng nội bộ
+pgdata/
+*.pgdata
+
+# ===== Phụ thuộc (cài lại bằng npm install) =====
+node_modules/
+
+# ===== Log =====
+*.log
+_srv.log
+_srverr.log
+npm-debug.log*
+
+# ===== Sản phẩm đóng gói portable (nặng, tự build lại) =====
+*.zip
+/node/
+/ollama/
+/models/
+
+# ===== Cấu hình cục bộ của công cụ (máy riêng) =====
+.claude/
+
+# ===== Rác hệ điều hành / IDE =====
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# ===== Tạm =====
+tmp/
+temp/
+scratchpad/

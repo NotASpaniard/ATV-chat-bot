@@ -1,0 +1,15 @@
+{
+  "name": "AVT Chat Bot",
+  "short_name": "AVT Bot",
+  "description": "Trợ lý AI nội bộ chạy trên máy chủ doanh nghiệp",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#6a83ef",
+  "lang": "vi",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
