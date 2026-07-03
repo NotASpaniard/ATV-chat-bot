@@ -192,11 +192,17 @@ async function handleChat(req, res) {
   let warnPrefix = '';
   if (lastUser) {
     try {
-      const hits = await db.retrieve(lastUser.content, 5, useMemory);
-      const good = hits.filter((h) => h.score > 0.3);
+      // Lấy nhiều ứng viên rồi chỉ giữ các đoạn liên quan nhất (giúp tài liệu lớn bớt nhiễu)
+      const hits = await db.retrieve(lastUser.content, 12, useMemory);
+      const good = hits.filter((h) => h.score > 0.35).slice(0, 6);
       if (good.length) {
-        ragContext = '\n\nDữ liệu nội bộ liên quan (ưu tiên dùng, thiếu thì nói rõ):\n' +
-          good.map((h, i) => `[${i + 1}] ${h.content}`).join('\n---\n');
+        ragContext =
+          '\n\n===== TRÍCH ĐOẠN LIÊN QUAN TỪ TÀI LIỆU NỘI BỘ =====\n' +
+          good.map((h, i) => `[${i + 1}] ${h.content}`).join('\n---\n') +
+          '\n===== HẾT TRÍCH ĐOẠN =====\n' +
+          'QUY TẮC TRẢ LỜI: Chỉ dựa vào các trích đoạn trên. Trả lời ĐÚNG TRỌNG TÂM câu hỏi, ' +
+          'ngắn gọn, không lan man, không thêm thông tin ngoài trích đoạn. ' +
+          'Nếu các trích đoạn KHÔNG chứa câu trả lời, hãy nói rõ: "Tôi không tìm thấy thông tin này trong tài liệu."';
       } else if (!(await db.embedOk())) {
         // Không tra được vì embedding lỗi -> cảnh báo rõ, tránh bịa trong im lặng
         warnPrefix = '> ⚠ Hệ thống tra cứu dữ liệu nội bộ (bge-m3) đang lỗi — câu trả lời dưới đây KHÔNG dựa trên tài liệu/bảng giá của bạn. Kiểm tra Ollama đã tải bge-m3 chưa (ollama pull bge-m3).\n\n';

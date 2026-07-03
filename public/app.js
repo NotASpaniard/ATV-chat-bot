@@ -14,6 +14,9 @@ const SESSION_KEY = 'avt-session-id';
 let sessionId = getSessionId();
 let history = [];
 let busy = false;
+let currentAbort = null; // AbortController của lượt đang trả lời (để tạm dừng)
+const STOP_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>';
+const SEND_ICON = sendBtn.innerHTML; // icon mũi tên ban đầu
 
 function newId() {
   return (crypto.randomUUID && crypto.randomUUID()) || 's-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
@@ -309,6 +312,10 @@ clearBtn.addEventListener('click', () => { if (!busy) startNewConversation(); })
 
 // --- gửi tin ---
 form.addEventListener('submit', (e) => { e.preventDefault(); send(); });
+// Khi đang trả lời, nút gửi biến thành nút tạm dừng -> bấm để dừng ngay
+sendBtn.addEventListener('click', (e) => {
+  if (busy) { e.preventDefault(); if (currentAbort) currentAbort.abort(); }
+});
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
@@ -331,17 +338,19 @@ async function send() {
   history.push({ role: 'user', content: text });
 
   const botBubble = addBubble('bot', '', { thinking: true });
+  const ctrl = new AbortController();
+  currentAbort = ctrl;
   setBusy(true);
   scrollToBottom();
 
   try {
     const res = adviseMode
       ? await fetch('/api/advise', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
           body: JSON.stringify({ requirement: text, sessionId }),
         })
       : await fetch('/api/chat', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
           body: JSON.stringify({ messages: history, sessionId, memory: memoryOn() }),
         });
     if (!res.ok) {
@@ -381,7 +390,8 @@ async function send() {
       const tick = () => {
         if (shown < acc.length) {
           const backlog = acc.length - shown;
-          const step = Math.max(2, Math.ceil(backlog / 8)); // đuổi kịp khi model nhanh, vẫn mượt khi chậm
+          // Bình thường hiện TỪNG chữ cái (1/khung); chỉ tăng tốc khi tụt lại quá xa
+          const step = backlog > 40 ? Math.ceil(backlog / 10) : 1;
           shown = Math.min(acc.length, shown + step);
           botBubble.textContent = acc.slice(0, shown);
           if (autoStick) messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -394,18 +404,23 @@ async function send() {
     await pump;
     botBubble.classList.remove('streaming');
     messagesEl.style.scrollBehavior = ''; // trả lại cuộn-mượt cho thao tác thường
-    if (pumpErr) throw pumpErr;
+    const stopped = pumpErr && pumpErr.name === 'AbortError';
+    if (pumpErr && !stopped) throw pumpErr;
     if (acc.trim()) {
       history.push({ role: 'assistant', content: acc });
-      botBubble.innerHTML = renderMd(acc); // đổi từ text thô sang bảng/định dạng thật
+      botBubble.innerHTML = renderMd(acc) + (stopped ? '<div class="stopped-note">— đã dừng —</div>' : '');
       botBubble.appendChild(botActions(acc));
       if (wasEmpty) loadConvos(); // cuộc mới -> cập nhật danh sách + tiêu đề
+    } else if (stopped) {
+      botBubble.textContent = '(Đã dừng)';
     } else {
       showError(botBubble, 'Model không trả về nội dung.');
     }
   } catch (err) {
-    showError(botBubble, 'Không kết nối được máy chủ: ' + err.message);
+    if (err && err.name === 'AbortError') { botBubble.textContent = '(Đã dừng)'; }
+    else { showError(botBubble, 'Không kết nối được máy chủ: ' + err.message); }
   } finally {
+    currentAbort = null;
     setBusy(false);
     input.focus();
   }
@@ -574,7 +589,14 @@ function botActions(text) {
 
 function showError(bubble, msg) { bubble.classList.add('error-note'); bubble.textContent = msg; }
 function clearWelcome() { const w = messagesEl.querySelector('.welcome'); if (w) w.remove(); }
-function setBusy(v) { busy = v; sendBtn.disabled = v; input.disabled = v; }
+function setBusy(v) {
+  busy = v;
+  input.disabled = v;
+  sendBtn.disabled = false;                 // luôn bấm được: khi đang trả lời thì để tạm dừng
+  sendBtn.classList.toggle('stopping', v);
+  sendBtn.innerHTML = v ? STOP_ICON : SEND_ICON;
+  sendBtn.title = v ? 'Tạm dừng' : 'Gửi';
+}
 function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
