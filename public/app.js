@@ -352,14 +352,43 @@ async function send() {
     }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    let acc = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      acc += decoder.decode(value, { stream: true });
-      botBubble.textContent = acc;
-      scrollToBottom();
-    }
+    let acc = '';         // toàn bộ text đã nhận từ máy chủ
+    let shown = 0;        // số ký tự đang hiển thị
+    let streamDone = false, pumpErr = null;
+
+    // Đọc mạng (KHÔNG đụng DOM) — tránh giật do vẽ theo từng token
+    const pump = (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          acc += decoder.decode(value, { stream: true });
+        }
+      } catch (e) { pumpErr = e; }
+      finally { streamDone = true; }
+    })();
+
+    // Hiện chữ dần, đều theo từng khung hình -> mượt, không nhảy
+    botBubble.classList.add('streaming');
+    await new Promise((resolve) => {
+      const nearBottom = () => messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 140;
+      const tick = () => {
+        if (shown < acc.length) {
+          const backlog = acc.length - shown;
+          const step = Math.max(2, Math.ceil(backlog / 8)); // đuổi kịp khi model nhanh, vẫn mượt khi chậm
+          shown = Math.min(acc.length, shown + step);
+          const stick = nearBottom();
+          botBubble.textContent = acc.slice(0, shown);
+          if (stick) messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+        if (streamDone && shown >= acc.length) return resolve();
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await pump;
+    botBubble.classList.remove('streaming');
+    if (pumpErr) throw pumpErr;
     if (acc.trim()) {
       history.push({ role: 'assistant', content: acc });
       botBubble.innerHTML = renderMd(acc); // đổi từ text thô sang bảng/định dạng thật

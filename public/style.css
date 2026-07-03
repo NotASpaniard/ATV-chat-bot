@@ -362,6 +362,12 @@ button.model-tag:hover { border-color: var(--accent); color: var(--text); }
 .msg.user .bubble { background: var(--user-bubble); color: var(--user-text); border-bottom-right-radius: 5px; }
 .msg.bot .bubble { background: var(--bot-bubble); border: 1px solid var(--border); border-bottom-left-radius: 5px; }
 .bubble.error-note { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.bubble.streaming::after {
+  content: ''; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px;
+  background: var(--accent); vertical-align: -2px; border-radius: 1px;
+  animation: caret-blink 1s steps(1) infinite;
+}
+@keyframes caret-blink { 50% { opacity: 0; } }
 
 /* ---- Markdown trong câu trả lời của bot (bảng thật, tiêu đề, danh sách) ---- */
 .bubble .md-h { margin: 12px 0 6px; font-weight: 700; line-height: 1.3; }
