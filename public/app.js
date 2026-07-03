@@ -550,7 +550,10 @@ const TOUR_STEPS = [
   { sel: '#tpl-btn', title: 'Mẫu câu lệnh', text: 'Chèn nhanh các mẫu soạn sẵn (báo giá, email chào hàng…).' },
   { sel: '#clear-btn', title: 'Cuộc trò chuyện mới', text: 'Tạo một cuộc trò chuyện mới, tách biệt với các cuộc trước.' },
   { sel: '#convo-search', title: 'Tìm kiếm', text: 'Tìm nhanh trong lịch sử chat và tài liệu đã lưu.' },
-  { sel: '.side-tools', title: 'Bảng công cụ', text: 'Quản trị dữ liệu (nhập bảng giá, tài liệu), đổi giao diện, bật/tắt ghi nhớ, và xem trạng thái máy.' },
+  { sel: '#tool-admin', title: 'Quản trị dữ liệu', text: 'Mở trang nhập bảng giá, tài liệu và cấu hình bot (bộ luật, mẫu).' },
+  { sel: '#theme-btn', title: 'Đổi giao diện', text: 'Chuyển 3 giao diện: Sáng / Tối / Cà phê (mỗi theme một logo con vật khác).' },
+  { sel: '#mem-btn', title: 'Ghi nhớ xuyên hội thoại', text: 'Bật để bot nhớ thông tin giữa các cuộc trò chuyện. Mặc định tắt cho riêng tư.' },
+  { sel: '#status-btn', title: 'Trạng thái hệ thống', text: 'Xem CPU / GPU / RAM / ổ đĩa và model đang chạy.' },
   { sel: '#model-tag', title: 'Model AI', text: 'Chọn, tải hoặc xóa model. Máy mạnh chọn model lớn để trả lời thông minh hơn.' },
 ];
 let tourIdx = 0;

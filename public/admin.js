@@ -509,16 +509,24 @@ document.addEventListener('click', async (e) => {
 // ===== HƯỚNG DẪN LẦN ĐẦU (tour) cho trang Quản trị =====
 const TOUR_STEPS = [
   { sel: '.tabs', title: 'Các mục quản trị', text: 'Chuyển giữa "Nhập dữ liệu" và "Bộ luật & Mẫu".' },
-  { sel: '#man-form', title: 'Nhập tay', text: 'Tự đặt tên trường (Tên, Đơn giá, Bảo hành…) rồi bấm "Lưu bản ghi". Không bị đóng cứng theo mẫu nào.' },
-  { sel: '.upload-scroll', title: 'Tải file', text: 'Kéo bảng giá Excel/CSV (mỗi dòng thành 1 bản ghi) hoặc PDF/Word/TXT (đưa vào kho tri thức cho bot).' },
-  { sel: '#saved-bar', title: 'Dữ liệu đã lưu', text: 'Bấm để mở bảng: xem chi tiết, sửa tên/nội dung, hoặc xóa từng mục.' },
+  { sel: '#man-form', title: 'Nhập tay', text: 'Tự đặt tên trường (Tên, Đơn giá, Bảo hành…) rồi bấm "Lưu bản ghi". Không bị đóng cứng theo mẫu nào.', tab: 'manual' },
+  { sel: '.upload-scroll', title: 'Tải file', text: 'Kéo bảng giá Excel/CSV (mỗi dòng thành 1 bản ghi) hoặc PDF/Word/TXT (đưa vào kho tri thức cho bot).', tab: 'manual' },
+  { sel: '#saved-bar', title: 'Dữ liệu đã lưu', text: 'Bấm để mở bảng: xem chi tiết, sửa tên/nội dung, hoặc xóa từng mục.', tab: 'manual' },
+  { sel: '#rules-text', title: 'Bộ luật', text: 'Đặt quy tắc áp cho MỌI câu trả lời của bot (trả lời ngắn gọn, không bịa…). Mỗi dòng một quy tắc, sửa xong bấm Lưu.', tab: 'config' },
+  { sel: '#tpl-bar', title: 'Mẫu câu lệnh', text: 'Tạo/sửa các mẫu soạn sẵn để chèn nhanh khi chat. Bấm mở danh sách mẫu.', tab: 'config' },
   { sel: '.side-nav', title: 'Điều hướng', text: 'Quay lại trang trò chuyện với bot.' },
 ];
 let tourIdx = 0;
 const tourEl = document.getElementById('tour');
 function showTourStep(i) {
   const step = TOUR_STEPS[i];
-  const el = step && document.querySelector(step.sel);
+  if (!step) return endTour();
+  // Chuyển sang đúng tab nếu bước này thuộc tab khác
+  if (step.tab) {
+    const tabBtn = document.querySelector('.tab[data-tab="' + step.tab + '"]');
+    if (tabBtn && !tabBtn.classList.contains('active')) tabBtn.click();
+  }
+  const el = document.querySelector(step.sel);
   if (!el) { if (i + 1 < TOUR_STEPS.length) return showTourStep(i + 1); return endTour(); }
   const r = el.getBoundingClientRect();
   const pad = 6;
