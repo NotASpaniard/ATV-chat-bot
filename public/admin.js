@@ -505,3 +505,68 @@ document.addEventListener('click', async (e) => {
     } catch (err) { log.textContent = 'Lỗi: ' + err.message; }
   }
 });
+
+// ===== HƯỚNG DẪN LẦN ĐẦU (tour) cho trang Quản trị =====
+const TOUR_STEPS = [
+  { sel: '.tabs', title: 'Các mục quản trị', text: 'Chuyển giữa "Nhập dữ liệu" và "Bộ luật & Mẫu".' },
+  { sel: '#man-form', title: 'Nhập tay', text: 'Tự đặt tên trường (Tên, Đơn giá, Bảo hành…) rồi bấm "Lưu bản ghi". Không bị đóng cứng theo mẫu nào.' },
+  { sel: '.upload-scroll', title: 'Tải file', text: 'Kéo bảng giá Excel/CSV (mỗi dòng thành 1 bản ghi) hoặc PDF/Word/TXT (đưa vào kho tri thức cho bot).' },
+  { sel: '#saved-bar', title: 'Dữ liệu đã lưu', text: 'Bấm để mở bảng: xem chi tiết, sửa tên/nội dung, hoặc xóa từng mục.' },
+  { sel: '.side-nav', title: 'Điều hướng', text: 'Quay lại trang trò chuyện với bot.' },
+];
+let tourIdx = 0;
+const tourEl = document.getElementById('tour');
+function showTourStep(i) {
+  const step = TOUR_STEPS[i];
+  const el = step && document.querySelector(step.sel);
+  if (!el) { if (i + 1 < TOUR_STEPS.length) return showTourStep(i + 1); return endTour(); }
+  const r = el.getBoundingClientRect();
+  const pad = 6;
+  const hole = document.getElementById('tour-hole');
+  hole.style.left = (r.left - pad) + 'px';
+  hole.style.top = (r.top - pad) + 'px';
+  hole.style.width = (r.width + pad * 2) + 'px';
+  hole.style.height = (r.height + pad * 2) + 'px';
+  document.getElementById('tour-step').textContent = `Bước ${i + 1}/${TOUR_STEPS.length}`;
+  document.getElementById('tour-title').textContent = step.title;
+  document.getElementById('tour-text').textContent = step.text;
+  const box = document.getElementById('tour-box');
+  const arrow = document.getElementById('tour-arrow');
+  box.style.visibility = 'hidden';
+  requestAnimationFrame(() => {
+    const bw = box.offsetWidth, bh = box.offsetHeight;
+    const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
+    let top, dir;
+    if (r.bottom + gap + bh <= vh) { top = r.bottom + gap; dir = 'up'; }
+    else { top = Math.max(12, r.top - gap - bh); dir = 'down'; }
+    let left = r.left + r.width / 2 - bw / 2;
+    left = Math.max(12, Math.min(left, vw - bw - 12));
+    box.style.top = top + 'px';
+    box.style.left = left + 'px';
+    arrow.className = 'tour-arrow ' + dir;
+    arrow.style.left = Math.max(18, Math.min(r.left + r.width / 2 - left, bw - 18)) + 'px';
+    box.style.visibility = 'visible';
+  });
+}
+function endTour() {
+  if (document.getElementById('tour-noshow').checked) localStorage.setItem('avt-tour-admin-done', '1');
+  tourEl.classList.add('hidden');
+  window.removeEventListener('resize', tourResize);
+}
+function tourResize() { showTourStep(tourIdx); }
+function startTour() {
+  tourIdx = 0;
+  tourEl.classList.remove('hidden');
+  showTourStep(0);
+  window.addEventListener('resize', tourResize);
+}
+if (tourEl) {
+  tourEl.addEventListener('click', (e) => {
+    if (e.target.closest('.tour-foot')) return;
+    tourIdx++;
+    if (tourIdx >= TOUR_STEPS.length) endTour();
+    else showTourStep(tourIdx);
+  });
+  document.getElementById('tour-close').addEventListener('click', (e) => { e.stopPropagation(); endTour(); });
+  if (!localStorage.getItem('avt-tour-admin-done')) setTimeout(startTour, 400);
+}
