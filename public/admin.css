@@ -114,11 +114,6 @@ form label { display: block; font-size: 13.5px; color: var(--text-muted); margin
 }
 .chips .tag.pick { cursor: pointer; transition: all var(--transition); }
 .chips .tag.pick:hover { border-color: var(--accent); color: var(--accent-strong); }
-.model-pull { display: flex; gap: 10px; margin-top: 10px; }
-.model-pull input { flex: 1; }
-.model-pull .btn-primary { flex: none; }
-#pull-progress { margin-top: 10px; font-size: 13px; color: var(--text-muted); }
-.data-item .del-model { color: var(--danger); }
 
 .table-wrap { overflow: auto; margin: 10px 0; max-height: 340px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 table { border-collapse: collapse; font-size: 13px; width: 100%; }

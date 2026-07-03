@@ -10,7 +10,6 @@ document.querySelectorAll('.tab').forEach((btn) => {
     if (btn.dataset.tab === 'data') { loadRecs(); loadDocs(); }
     if (btn.dataset.tab === 'chat') loadSessions();
     if (btn.dataset.tab === 'rules') loadRules();
-    if (btn.dataset.tab === 'model') loadModels();
     if (btn.dataset.tab === 'tpl') loadTemplates();
     clearInterval(window._statusTimer);
     if (btn.dataset.tab === 'status') { loadStatus(); window._statusTimer = setInterval(loadStatus, 5000); }
@@ -377,89 +376,6 @@ async function loadStatus() {
       <div class="bar"><div class="bar-fill" style="width:${100 - s.disk.freePct}%"></div></div>` : ''}`;
   } catch (err) { el.innerHTML = '<div class="empty">Lỗi: ' + esc(err.message) + '</div>'; }
 }
-
-// ===== QUẢN LÝ MODEL =====
-const SUGGEST_MODELS = ['qwen2.5:3b', 'qwen2.5:7b', 'qwen2.5:14b', 'llama3.1:8b', 'gemma2:9b', 'bge-m3'];
-const modelSuggest = document.getElementById('model-suggest');
-const pullName = document.getElementById('pull-name');
-const pullProgress = document.getElementById('pull-progress');
-if (modelSuggest) {
-  modelSuggest.innerHTML = SUGGEST_MODELS.map((m) => `<span class="tag pick" data-m="${m}">${m}</span>`).join(' ');
-  modelSuggest.addEventListener('click', (e) => { const t = e.target.closest('.pick'); if (t) pullName.value = t.dataset.m; });
-}
-function fmtGB(b) { return b ? (b / 1073741824).toFixed(1) + ' GB' : ''; }
-
-async function loadModels() {
-  const el = document.getElementById('model-list');
-  try {
-    const d = await api('/api/models');
-    if (d.error) { el.innerHTML = '<div class="empty">' + esc(d.error) + ' — kiểm tra Ollama đã chạy chưa.</div>'; return; }
-    if (!d.models.length) { el.innerHTML = '<div class="empty">Chưa có model nào. Tải ở phần bên dưới.</div>'; return; }
-    el.innerHTML = d.models.map((m) => {
-      const active = m.name === d.active;
-      return `<div class="data-item">
-        <div>
-          <div>${esc(m.name)} ${active ? '<span class="tag" style="color:var(--dot-online);border-color:var(--dot-online)">đang dùng</span>' : ''}</div>
-          <div class="meta">${fmtGB(m.size)}</div>
-        </div>
-        <div style="display:flex;gap:8px">
-          ${active ? '' : `<button class="use-model btn-ghost" type="button" data-m="${esc(m.name)}">Dùng</button>`}
-          <button class="del-model del" type="button" data-m="${esc(m.name)}">Xóa</button>
-        </div>
-      </div>`;
-    }).join('');
-  } catch (err) { el.innerHTML = '<div class="empty">Lỗi: ' + esc(err.message) + '</div>'; }
-}
-
-const modelListEl = document.getElementById('model-list');
-if (modelListEl) modelListEl.addEventListener('click', async (e) => {
-  const use = e.target.closest('.use-model');
-  const del = e.target.closest('.del-model');
-  if (use) {
-    try { await api('/api/models/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: use.dataset.m }) }); loadModels(); }
-    catch (err) { alert('Lỗi: ' + err.message); }
-  } else if (del) {
-    if (!confirm('Xóa model ' + del.dataset.m + '? (giải phóng ổ đĩa)')) return;
-    try { await api('/api/models/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: del.dataset.m }) }); loadModels(); }
-    catch (err) { alert('Lỗi: ' + err.message); }
-  }
-});
-
-const pullBtn = document.getElementById('pull-btn');
-if (pullBtn) pullBtn.addEventListener('click', async () => {
-  const name = pullName.value.trim();
-  if (!name) return;
-  pullBtn.disabled = true;
-  pullProgress.textContent = 'Đang tải ' + name + '… (lần đầu có thể vài phút)';
-  try {
-    const res = await fetch('/api/models/pull', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const lines = buf.split('\n'); buf = lines.pop();
-      for (const ln of lines) {
-        if (!ln.trim()) continue;
-        try {
-          const o = JSON.parse(ln);
-          if (o.error) { pullProgress.textContent = 'Lỗi: ' + o.error; }
-          else if (o.status) {
-            let s = o.status;
-            if (o.total && o.completed) s += ' — ' + Math.round(o.completed / o.total * 100) + '%';
-            pullProgress.textContent = s;
-          }
-        } catch {}
-      }
-    }
-    pullProgress.textContent = 'Đã tải xong: ' + name;
-    pullName.value = '';
-    loadModels();
-  } catch (err) { pullProgress.textContent = 'Lỗi: ' + err.message; }
-  finally { pullBtn.disabled = false; }
-});
 
 // ===== xử lý chung: xem / xóa =====
 document.addEventListener('click', async (e) => {

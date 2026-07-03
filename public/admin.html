@@ -60,10 +60,6 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
           <span>Dữ liệu đã lưu</span>
         </button>
-        <button class="tab" data-tab="model">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>
-          <span>Model</span>
-        </button>
         <button class="tab" data-tab="rules">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-3 8-7 10-4-2-7-5.6-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
           <span>Bộ luật</span>
@@ -115,22 +111,6 @@
         <div id="rec-list" class="data-list">Đang tải…</div>
         <h3 class="mt">Tài liệu (kho tri thức)</h3>
         <div id="doc-list" class="data-list">Đang tải…</div>
-      </section>
-
-      <!-- MODEL -->
-      <section class="panel-box tab-content hidden" id="tab-model">
-        <h3>Quản lý model AI</h3>
-        <p class="sub">Chọn model đang dùng để trả lời, tải model mới về, hoặc xóa model không cần. Model nhỏ chạy nhanh hơn; model lớn thông minh hơn (cần máy mạnh/GPU).</p>
-        <div id="model-list" class="data-list">Đang tải…</div>
-
-        <h3 class="mt">Tải model mới</h3>
-        <p class="sub">Gõ tên model rồi bấm Tải (cần mạng lần đầu). Gợi ý bấm vào để điền nhanh:</p>
-        <div class="chips" id="model-suggest"></div>
-        <div class="model-pull">
-          <input id="pull-name" placeholder="VD: qwen2.5:7b" />
-          <button id="pull-btn" class="btn-primary" type="button">Tải model</button>
-        </div>
-        <div id="pull-progress" class="ptext"></div>
       </section>
 
       <!-- BỘ LUẬT -->
