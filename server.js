@@ -90,7 +90,7 @@ function sendJson(res, code, obj) {
 async function activeModel() { return db.getSetting('model', MODEL); }
 
 // Gọi Ollama chat (stream) tới client. Trả về toàn bộ text đã sinh.
-async function streamOllama(res, model, systemContent, chatMessages) {
+async function streamOllama(res, model, systemContent, chatMessages, prefix = '') {
   const payload = {
     model: model || MODEL,
     messages: [{ role: 'system', content: systemContent }, ...chatMessages],
@@ -107,6 +107,7 @@ async function streamOllama(res, model, systemContent, chatMessages) {
   }
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' });
   let buf = '', full = '';
+  if (prefix) { res.write(prefix); full += prefix; }
   const flush = (line) => {
     if (!line.trim()) return;
     try { const o = JSON.parse(line); if (o.message && o.message.content) { res.write(o.message.content); full += o.message.content; } } catch {}
@@ -119,6 +120,57 @@ async function streamOllama(res, model, systemContent, chatMessages) {
   flush(buf);
   res.end();
   return full;
+}
+
+// ---- Tiện ích cho tư vấn tối ưu (server tự tính tiền, không tin phép tính của model) ----
+const COMBINING_MARKS = new RegExp('[\u0300-\u036f]', 'g');
+function noAccent(s) { return String(s || '').normalize('NFD').replace(COMBINING_MARKS, '').toLowerCase(); }
+function parseNum(v) {
+  if (v == null) return NaN;
+  const d = String(v).replace(/[^\d]/g, '');
+  return d ? Number(d) : NaN;
+}
+// Đơn giá: ưu tiên trường tên có 'gia'/'price'; nếu không, lấy số lớn nhất trông giống tiền.
+function pickPrice(data) {
+  for (const [key, val] of Object.entries(data || {})) {
+    const k = noAccent(key);
+    if (k.includes('gia') || k.includes('price')) {
+      const n = parseNum(val);
+      if (!isNaN(n) && n > 0) return n;
+    }
+  }
+  let best = NaN;
+  for (const val of Object.values(data || {})) {
+    const n = parseNum(val);
+    if (!isNaN(n) && n >= 1000 && (isNaN(best) || n > best)) best = n;
+  }
+  return best;
+}
+// Tên thiết bị: ưu tiên trường 'ten'/'name'/'thiet bi'/'san pham'; fallback ghép collection + giá trị đầu.
+function pickName(data, collection) {
+  for (const [key, val] of Object.entries(data || {})) {
+    const k = noAccent(key);
+    if ((k.includes('ten') || k.includes('name') || k.includes('thiet bi') || k.includes('san pham')) && val)
+      return String(val).trim();
+  }
+  const vals = Object.values(data || {});
+  return ((collection ? collection + ' - ' : '') + (vals[0] != null ? String(vals[0]) : 'Thiết bị')).trim();
+}
+function fmtVnd(n) { return Number(n).toLocaleString('vi-VN'); }
+
+// Gọi Ollama ở chế độ trả JSON (không stream) để lấy lựa chọn của model.
+async function ollamaJson(model, system, user) {
+  const r = await fetch(`${OLLAMA}/api/chat`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: model || MODEL,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      stream: false, format: 'json', keep_alive: '30m', options: { temperature: 0.2 },
+    }),
+  });
+  if (!r.ok) throw new Error('Ollama ' + r.status);
+  const j = await r.json();
+  return (j.message && j.message.content) || '';
 }
 
 // ---- chat có RAG + bộ luật + lưu DB ----
@@ -137,6 +189,7 @@ async function handleChat(req, res) {
   } catch (e) { console.error('Lưu câu hỏi lỗi:', e.message); }
 
   let ragContext = '';
+  let warnPrefix = '';
   if (lastUser) {
     try {
       const hits = await db.retrieve(lastUser.content, 5, useMemory);
@@ -144,6 +197,9 @@ async function handleChat(req, res) {
       if (good.length) {
         ragContext = '\n\nDữ liệu nội bộ liên quan (ưu tiên dùng, thiếu thì nói rõ):\n' +
           good.map((h, i) => `[${i + 1}] ${h.content}`).join('\n---\n');
+      } else if (!(await db.embedOk())) {
+        // Không tra được vì embedding lỗi -> cảnh báo rõ, tránh bịa trong im lặng
+        warnPrefix = '> ⚠ Hệ thống tra cứu dữ liệu nội bộ (bge-m3) đang lỗi — câu trả lời dưới đây KHÔNG dựa trên tài liệu/bảng giá của bạn. Kiểm tra Ollama đã tải bge-m3 chưa (ollama pull bge-m3).\n\n';
       }
     } catch (e) { console.error('RAG lỗi:', e.message); }
   }
@@ -151,47 +207,115 @@ async function handleChat(req, res) {
   const rules = await db.getRules().catch(() => '');
   const system = SYSTEM_PROMPT + '\n\nBỘ LUẬT (phải tuân thủ):\n' + rules + ragContext;
 
-  const full = await streamOllama(res, await activeModel(), system, messages);
+  const full = await streamOllama(res, await activeModel(), system, messages, warnPrefix);
   if (full && full.trim()) {
     try { await db.saveMessage(sid, 'assistant', full); } catch (e) { console.error('Lưu trả lời lỗi:', e.message); }
     if (useMemory && lastUser) db.saveMemory(sid, `Hỏi: ${lastUser.content}\nĐáp: ${full}`).catch(() => {});
   }
 }
 
-// ---- Tư vấn tối ưu: chọn phương án tốt nhất từ bảng giá theo yêu cầu khách ----
+// ---- Tư vấn tối ưu: model CHỌN thiết bị (JSON), SERVER tự tính tiền cho chính xác ----
+function sendText(res, text) {
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' });
+  res.end(text);
+}
+
 async function handleAdvise(req, res) {
   const { requirement, sessionId } = await readJson(req);
   if (!requirement || !requirement.trim()) return sendJson(res, 400, { error: 'Thiếu yêu cầu' });
   const sid = sessionId || 'default';
-
-  let devices = [];
-  try { devices = await db.retrieveRecords(requirement, 25); } catch (e) { console.error('retrieveRecords lỗi:', e.message); }
 
   try {
     await db.ensureSession(sid, ('Tư vấn: ' + requirement).slice(0, 60));
     await db.saveMessage(sid, 'user', '[Tư vấn tối ưu] ' + requirement);
   } catch {}
 
-  const rules = await db.getRules().catch(() => '');
-  let dataBlock = devices.length
-    ? devices.map((d, i) => `[${i + 1}] ${d.content}`).join('\n')
-    : '(Không tìm thấy thiết bị phù hợp trong bảng giá nội bộ.)';
+  let rows = [];
+  try { rows = await db.retrieveDevices(requirement, 25); } catch (e) { console.error('retrieveDevices lỗi:', e.message); }
 
-  const system =
-    SYSTEM_PROMPT + '\n\nBỘ LUẬT:\n' + rules +
-    '\n\nBẠN LÀ CHUYÊN GIA TƯ VẤN THIẾT BỊ. Dưới đây là DANH SÁCH THIẾT BỊ nội bộ (tên, thông số, đơn giá):\n' +
-    dataBlock +
-    '\n\nHãy chọn PHƯƠNG ÁN TỐI ƯU NHẤT đáp ứng yêu cầu của khách. Trình bày:\n' +
-    '1) Bảng: Thiết bị | Số lượng | Đơn giá | Thành tiền\n' +
-    '2) TỔNG CHI PHÍ\n' +
-    '3) Lý do chọn (ngắn gọn, bám sát yêu cầu)\n' +
-    'CHỈ dùng thiết bị có trong danh sách trên. Nếu danh sách thiếu thứ khách cần, nói rõ thiếu gì.';
-
-  const userMsg = [{ role: 'user', content: 'Yêu cầu của khách: ' + requirement }];
-  const full = await streamOllama(res, await activeModel(), system, userMsg);
-  if (full && full.trim()) {
-    try { await db.saveMessage(sid, 'assistant', full); } catch {}
+  // Không có dữ liệu: phân biệt "chưa nhập bảng giá" vs "embedding lỗi"
+  if (!rows.length) {
+    const ok = await db.embedOk();
+    return sendText(res, ok
+      ? 'Chưa tìm thấy thiết bị phù hợp trong bảng giá nội bộ. Hãy vào Quản trị dữ liệu để nhập bảng giá trước khi dùng tư vấn.'
+      : '⚠ Hệ thống tra cứu (embedding bge-m3) đang lỗi nên không đọc được bảng giá. Kiểm tra Ollama đã tải bge-m3 chưa (ollama pull bge-m3), rồi thử lại.');
   }
+
+  // Lập danh mục có đơn giá thật (bỏ dòng không đọc được giá)
+  const catalog = [];
+  for (const r of rows) {
+    const price = pickPrice(r.data);
+    if (isNaN(price)) continue;
+    catalog.push({ name: pickName(r.data, r.collection), price, note: r.content });
+  }
+  if (!catalog.length) {
+    return sendText(res, 'Tìm thấy thiết bị liên quan nhưng không đọc được ĐƠN GIÁ (thiếu cột giá). Hãy kiểm tra lại bảng giá đã nhập.');
+  }
+
+  // Model chỉ CHỌN (index + số lượng), không tính tiền
+  const catText = catalog.map((c, i) => `${i + 1}. ${c.name} — đơn giá ${fmtVnd(c.price)} đ — ${c.note}`).join('\n');
+  const selSystem =
+    'Bạn là chuyên gia tư vấn thiết bị. Dưới đây là DANH MỤC (mỗi dòng có số thứ tự, tên, đơn giá):\n' + catText +
+    '\n\nChọn PHƯƠNG ÁN TỐI ƯU đáp ứng yêu cầu của khách. CHỈ được chọn thiết bị trong danh mục theo SỐ THỨ TỰ.' +
+    ' Đọc KỸ yêu cầu: nếu khách mô tả một HỆ THỐNG gồm nhiều phần (ví dụ camera + đầu ghi + ổ cứng), phải chọn ĐỦ tất cả các phần đó nếu danh mục có; chọn đúng SỐ LƯỢNG khách nêu.' +
+    ' KHÔNG tự tính tiền. Trả về DUY NHẤT một JSON đúng định dạng:' +
+    ' {"items":[{"index":<số thứ tự>,"qty":<số lượng nguyên>}],"reason":"lý do ngắn gọn tiếng Việt","missing":"thứ khách cần nhưng danh mục không có (nếu có)"}';
+
+  let sel = null;
+  for (let attempt = 0; attempt < 2 && !sel; attempt++) {
+    try {
+      const raw = await ollamaJson(await activeModel(), selSystem, 'Yêu cầu của khách: ' + requirement);
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.items)) sel = parsed;
+    } catch (e) { console.error('Chọn phương án lỗi (lần ' + (attempt + 1) + '):', e.message); }
+  }
+
+  // Model không trả JSON hợp lệ -> vẫn giúp ích: liệt kê thiết bị liên quan kèm giá đúng
+  if (!sel) {
+    const list = catalog.map((c) => `- ${c.name}: ${fmtVnd(c.price)} đ`).join('\n');
+    const msg = 'Chưa tự chọn được phương án. Các thiết bị liên quan trong bảng giá:\n' + list +
+      '\n\nVui lòng nêu rõ số lượng từng loại để được báo giá chi tiết.';
+    try { await db.saveMessage(sid, 'assistant', msg); } catch {}
+    return sendText(res, msg);
+  }
+
+  // SERVER tính tiền (gộp trùng theo index, chặn số lượng vô lý)
+  const merged = new Map();
+  for (const it of sel.items) {
+    const idx = Number(it.index) - 1;
+    let qty = Math.floor(Number(it.qty));
+    if (!(idx >= 0 && idx < catalog.length)) continue;
+    if (!(qty >= 1)) qty = 1;
+    if (qty > 100000) qty = 100000;
+    merged.set(idx, (merged.get(idx) || 0) + qty);
+  }
+
+  if (!merged.size) {
+    const msg = 'Không xác định được thiết bị phù hợp trong bảng giá cho yêu cầu này.' +
+      (sel.missing ? ' Thiếu: ' + sel.missing : '');
+    try { await db.saveMessage(sid, 'assistant', msg); } catch {}
+    return sendText(res, msg);
+  }
+
+  let total = 0;
+  const lines = [];
+  for (const [idx, qty] of merged) {
+    const c = catalog[idx];
+    const lineTotal = c.price * qty;
+    total += lineTotal;
+    lines.push(`| ${c.name} | ${qty} | ${fmtVnd(c.price)} đ | ${fmtVnd(lineTotal)} đ |`);
+  }
+
+  let out = '## Phương án tối ưu\n\n' +
+    '| Thiết bị | Số lượng | Đơn giá | Thành tiền |\n|---|---:|---:|---:|\n' +
+    lines.join('\n') +
+    `\n| **Tổng cộng** | | | **${fmtVnd(total)} đ** |\n`;
+  if (sel.reason) out += `\n**Lý do chọn:** ${sel.reason}\n`;
+  if (sel.missing) out += `\n**Chưa có trong bảng giá:** ${sel.missing}\n`;
+  out += '\n*Số liệu do hệ thống tự tính từ bảng giá nội bộ; vui lòng rà soát trước khi gửi khách.*';
+
+  try { await db.saveMessage(sid, 'assistant', out); } catch {}
+  sendText(res, out);
 }
 
 // ---- Xuất câu trả lời ra Excel (tách bảng markdown thành các cột) ----
@@ -412,6 +536,11 @@ const server = http.createServer(async (req, res) => {
       if (!r.data || typeof r.data !== 'object' || !Object.keys(r.data).length)
         return sendJson(res, 400, { error: 'Cần ít nhất một trường có dữ liệu' });
       return sendJson(res, 200, await db.addRecord(r));
+    }
+    // Embedding lại các bản ghi cũ đang thiếu trong knowledge (vd nạp lúc thiếu model)
+    if (req.method === 'POST' && p === '/api/records/reindex') {
+      const jobId = startJob((onProgress) => db.reindexRecords(onProgress));
+      return sendJson(res, 200, { jobId });
     }
     // Nhập hàng loạt: { records:[{collection,data}] } (từ bước xem trước file bảng)
     if (req.method === 'POST' && p === '/api/records/import') {

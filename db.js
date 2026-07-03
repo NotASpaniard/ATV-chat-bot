@@ -103,6 +103,12 @@ async function embed(text) {
   return data.embedding;
 }
 
+// Kiểm tra nhanh embedding có hoạt động không (dùng để cảnh báo khi bge-m3 lỗi/thiếu)
+async function embedOk() {
+  try { const v = await embed('kiểm tra'); return Array.isArray(v) && v.length > 0; }
+  catch { return false; }
+}
+
 // pgvector nhận vector dạng chuỗi '[1,2,3]'
 function toVectorLiteral(arr) {
   return '[' + arr.join(',') + ']';
@@ -264,19 +270,46 @@ function recordToText(collection, data) {
 async function addRecord(r) {
   const collection = clean((r.collection || 'chung').trim()) || 'chung';
   const data = cleanObj(r.data && typeof r.data === 'object' ? r.data : {});
+  // Embedding TRƯỚC: nếu lỗi (vd thiếu model) thì văng ngay, KHÔNG tạo bản ghi mồ côi.
+  const text = recordToText(collection, data);
+  const vec = await embed('search_document: ' + text);
   const { rows } = await pg.query(
     `INSERT INTO records (collection, data) VALUES ($1, $2) RETURNING id`,
     [collection, data]
   );
   const id = rows[0].id;
-  const text = recordToText(collection, data);
-  const vec = await embed('search_document: ' + text);
   await pg.query(
     `INSERT INTO knowledge (source_type, source_id, chunk_index, content, embedding)
      VALUES ('record', $1, 0, $2, $3::vector)`,
     [id, text, toVectorLiteral(vec)]
   );
   return { id };
+}
+
+// Embedding lại các bản ghi CŨ đang thiếu trong knowledge (vd nạp lúc thiếu model).
+async function reindexRecords(onProgress) {
+  const { rows } = await pg.query(
+    `SELECT r.id, r.collection, r.data FROM records r
+     WHERE NOT EXISTS (
+       SELECT 1 FROM knowledge k WHERE k.source_type='record' AND k.source_id = r.id
+     ) ORDER BY r.id`
+  );
+  let ok = 0;
+  const errors = [];
+  await runPool(rows.length, async (i) => {
+    const row = rows[i];
+    try {
+      const text = recordToText(row.collection, row.data);
+      const vec = await embed('search_document: ' + text);
+      await pg.query(
+        `INSERT INTO knowledge (source_type, source_id, chunk_index, content, embedding)
+         VALUES ('record', $1, 0, $2, $3::vector)`,
+        [row.id, text, toVectorLiteral(vec)]
+      );
+      ok++;
+    } catch (e) { errors.push({ id: row.id, error: e.message }); }
+  }, onProgress);
+  return { missing: rows.length, reindexed: ok, failed: errors.length, errors: errors.slice(0, 10) };
 }
 
 // Nhập nhiều bản ghi (từ file Excel/CSV). Trả về số dòng đã nhập + lỗi (nếu có).
@@ -354,6 +387,21 @@ async function retrieveRecords(queryText, k = 20) {
   return rows;
 }
 
+// Như retrieveRecords nhưng lấy kèm DATA gốc (để server tự tính tiền chính xác).
+async function retrieveDevices(queryText, k = 25) {
+  let vec;
+  try { vec = await embed('search_query: ' + queryText); } catch { return []; }
+  const { rows } = await pg.query(
+    `SELECT r.id, r.collection, r.data, k.content,
+            1 - (k.embedding <=> $1::vector) AS score
+     FROM knowledge k JOIN records r ON r.id = k.source_id
+     WHERE k.source_type = 'record'
+     ORDER BY k.embedding <=> $1::vector LIMIT $2`,
+    [toVectorLiteral(vec), k]
+  );
+  return rows;
+}
+
 async function retrieve(queryText, k = 5, includeMemory = false) {
   let vec;
   try {
@@ -379,8 +427,8 @@ module.exports = {
   init,
   ensureSession, saveMessage, getMessages, listSessions, deleteSession, saveMemory,
   addDocument, listDocuments, deleteDocument,
-  addRecord, addRecordsBulk, listRecords, deleteRecord,
-  retrieve, retrieveRecords,
+  addRecord, addRecordsBulk, listRecords, deleteRecord, reindexRecords,
+  retrieve, retrieveRecords, retrieveDevices, embedOk,
   getSetting, setSetting, getRules,
   getTemplates, setTemplates, search,
 };
