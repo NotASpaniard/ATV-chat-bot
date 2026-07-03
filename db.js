@@ -347,20 +347,21 @@ async function deleteRecord(id) {
   await pg.query('DELETE FROM records WHERE id=$1', [id]);
 }
 
-// Đổi tên NHÓM của bản ghi + cập nhật lại text/embedding cho RAG khớp.
-async function renameRecord(id, collection) {
-  const coll = clean((collection || 'chung').trim()) || 'chung';
-  await pg.query('UPDATE records SET collection=$1 WHERE id=$2', [coll, id]);
-  const { rows } = await pg.query('SELECT collection, data FROM records WHERE id=$1', [id]);
-  if (!rows.length) return;
-  const text = recordToText(rows[0].collection, rows[0].data);
+// Cập nhật bản ghi (đổi nhóm và/hoặc các trường) + re-embed cho RAG khớp.
+async function updateRecord(id, { collection, data }) {
+  const cur = (await pg.query('SELECT collection, data FROM records WHERE id=$1', [id])).rows[0];
+  if (!cur) return;
+  const coll = collection != null ? (clean(String(collection).trim()) || 'chung') : cur.collection;
+  const newData = data != null && typeof data === 'object' ? cleanObj(data) : cur.data;
+  await pg.query('UPDATE records SET collection=$1, data=$2 WHERE id=$3', [coll, newData, id]);
+  const text = recordToText(coll, newData);
   try {
     const vec = await embed('search_document: ' + text);
     await pg.query(
       `UPDATE knowledge SET content=$1, embedding=$2::vector WHERE source_type='record' AND source_id=$3`,
       [text, toVectorLiteral(vec), id]
     );
-  } catch (e) { console.error('renameRecord re-embed lỗi:', e.message); }
+  } catch (e) { console.error('updateRecord re-embed lỗi:', e.message); }
 }
 
 // ---- Tìm kiếm ngữ nghĩa (RAG) ----
@@ -457,7 +458,7 @@ module.exports = {
   init,
   ensureSession, saveMessage, getMessages, listSessions, deleteSession, saveMemory,
   addDocument, listDocuments, deleteDocument, renameDocument, getDocument,
-  addRecord, addRecordsBulk, listRecords, deleteRecord, renameRecord, reindexRecords,
+  addRecord, addRecordsBulk, listRecords, deleteRecord, updateRecord, reindexRecords,
   retrieve, retrieveRecords, retrieveDevices, embedOk,
   getSetting, setSetting, getRules,
   getTemplates, setTemplates, search,

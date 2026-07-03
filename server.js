@@ -600,9 +600,11 @@ const server = http.createServer(async (req, res) => {
       }
     }
     if (req.method === 'PUT' && p.startsWith('/api/records/')) {
-      const { collection } = await readJson(req);
-      if (!collection || !collection.trim()) return sendJson(res, 400, { error: 'Thiếu tên nhóm mới' });
-      await db.renameRecord(Number(p.split('/')[3]), collection.trim());
+      const { collection, data } = await readJson(req);
+      if (collection == null && data == null) return sendJson(res, 400, { error: 'Không có gì để cập nhật' });
+      if (data != null && (typeof data !== 'object' || !Object.keys(data).length))
+        return sendJson(res, 400, { error: 'Cần ít nhất một trường có dữ liệu' });
+      await db.updateRecord(Number(p.split('/')[3]), { collection, data });
       return sendJson(res, 200, { ok: true });
     }
     if (req.method === 'DELETE' && p.startsWith('/api/records/')) {

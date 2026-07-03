@@ -250,3 +250,19 @@ tr:last-child td { border-bottom: none; }
 .detail-fields { width: 100%; border-collapse: collapse; font-size: 14px; }
 .detail-fields th, .detail-fields td { padding: 9px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
 .detail-fields th { color: var(--text-muted); font-weight: 600; white-space: nowrap; width: 30%; }
+
+/* input các trường bản ghi trong popup (modal nằm ngoài .admin-main nên cần style riêng) */
+.modal-panel .rec-fields input {
+  width: 100%; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px 13px;
+  font-size: 14px; font-family: inherit; outline: none; transition: border var(--transition);
+}
+.modal-panel .rec-fields input:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.modal-panel .form-actions { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
+
+/* ô tải file sau khi xong: thu gọn 1 dòng */
+.up-done-row { display: flex; align-items: center; gap: 12px; }
+.up-check { width: 22px; height: 22px; flex: none; color: var(--dot-online); }
+.up-done-info { flex: 1; min-width: 0; }
+.up-done-name { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.up-done-msg { font-size: 12.5px; color: var(--dot-online); margin-top: 2px; }

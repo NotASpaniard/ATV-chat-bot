@@ -137,10 +137,20 @@ function makeUploadCard() {
     ptextEl.textContent = total ? `Đang xử lý: ${done}/${total} (${pct}%)` : 'Đang chuẩn bị…';
   };
   const progHide = () => progEl.classList.add('hidden');
-  const finish = () => {
-    bodyEl.querySelectorAll('button, input, textarea').forEach((el) => (el.disabled = true));
-    fileEl.disabled = true;
+  // Tải xong -> thu gọn ô thành 1 dòng: tên file + đã tải lên thành công
+  const finish = (okMsg) => {
+    const fname = (fileEl.files && fileEl.files[0] && fileEl.files[0].name) || 'File';
     card.classList.add('done');
+    card.innerHTML = `<div class="up-done-row">
+      <svg class="up-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+      <div class="up-done-info">
+        <div class="up-done-name">${esc(fname)}</div>
+        <div class="up-done-msg">${esc(okMsg || 'Đã tải lên thành công')}</div>
+      </div>
+      <button class="up-remove icon-btn" type="button" title="Xóa khỏi danh sách">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+      </button></div>`;
+    card.querySelector('.up-remove').addEventListener('click', () => { card.remove(); ensureTrailingEmpty(); });
     refreshSavedCount();
   };
 
@@ -208,9 +218,9 @@ function makeUploadCard() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ records }),
       });
       const result = await pollJob(jobId, prog); progHide();
-      let msg = `Đã nhập ${result.imported} bản ghi.`;
+      let msg = `Đã tải lên thành công · ${result.imported} bản ghi`;
       if (result.failed) msg += ` (${result.failed} lỗi)`;
-      setStatus(statusEl, msg, result.failed === 0); finish();
+      finish(msg);
     } catch (err) { progHide(); setStatus(statusEl, 'Lỗi: ' + err.message, false); btn.disabled = false; }
   }
   async function saveText() {
@@ -224,7 +234,7 @@ function makeUploadCard() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, content }),
       });
       const result = await pollJob(jobId, prog); progHide();
-      setStatus(statusEl, `Đã lưu vào tri thức (${(result && result.chunks) || 0} đoạn).`, true); finish();
+      finish(`Đã tải lên thành công · ${(result && result.chunks) || 0} đoạn`);
     } catch (err) { progHide(); setStatus(statusEl, 'Lỗi: ' + err.message, false); btn.disabled = false; }
   }
 
@@ -263,52 +273,83 @@ async function loadSavedData() {
   } catch (err) { body.innerHTML = '<div class="empty">Lỗi tải: ' + esc(err.message) + '</div>'; }
 }
 
-// --- Trang chi tiết: nội dung đầy đủ + sửa tên tại chỗ ---
-async function openDetail(kind, id) {
+const detailBarHtml = (typeLabel, typeClass) => `
+  <div class="detail-bar">
+    <button class="detail-back" type="button" title="Quay lại">${BACK_SVG}<span>Quay lại</span></button>
+    <span class="type-tag${typeClass}">${typeLabel}</span>
+  </div>`;
+
+// --- Chi tiết TÀI LIỆU: xem nội dung đầy đủ + sửa tên ---
+async function openDocDetail(id) {
   const body = document.getElementById('data-modal-body');
   body.innerHTML = 'Đang tải…';
-  let name = '', contentHtml = '';
-  try {
-    if (kind === 'doc') {
-      const doc = await api('/api/documents/' + id);
-      name = doc.title || '';
-      contentHtml = `<pre class="detail-text">${esc(doc.content || '(trống)')}</pre>`;
-    } else {
-      const r = savedRecs.find((x) => x.id == id);
-      name = (r && r.collection) || 'chung';
-      const fields = Object.entries((r && r.data) || {});
-      contentHtml = fields.length
-        ? `<table class="detail-fields"><tbody>${fields.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</tbody></table>`
-        : '<div class="empty">(Bản ghi trống)</div>';
-    }
-  } catch (err) { body.innerHTML = '<div class="empty">Lỗi tải: ' + esc(err.message) + '</div>'; return; }
-
-  body.innerHTML = `
-    <div class="detail-bar">
-      <button class="detail-back" type="button" title="Quay lại">${BACK_SVG}<span>Quay lại</span></button>
-      <span class="type-tag${kind === 'rec' ? ' rec' : ''}">${kind === 'doc' ? 'Tài liệu' : 'Bản ghi'}</span>
-    </div>
-    <label class="detail-lbl">${kind === 'doc' ? 'Tên tài liệu' : 'Tên nhóm'} (sửa trực tiếp rồi Enter để lưu)</label>
-    <input class="detail-title-input" value="${esc(name)}" data-kind="${kind}" data-id="${id}" />
+  let doc;
+  try { doc = await api('/api/documents/' + id); }
+  catch (err) { body.innerHTML = '<div class="empty">Lỗi tải: ' + esc(err.message) + '</div>'; return; }
+  let name = doc.title || '';
+  body.innerHTML = detailBarHtml('Tài liệu', '') + `
+    <label class="detail-lbl">Tên tài liệu (sửa rồi Enter để lưu)</label>
+    <input class="detail-title-input" value="${esc(name)}" />
     <span class="detail-saved" id="detail-saved"></span>
-    <div class="detail-content">${contentHtml}</div>`;
-
+    <div class="detail-content"><pre class="detail-text">${esc(doc.content || '(trống)')}</pre></div>`;
   const input = body.querySelector('.detail-title-input');
-  const saveName = async () => {
+  const save = async () => {
     const nv = input.value.trim();
     if (!nv || nv === name) return;
-    const url = (kind === 'doc' ? '/api/documents/' : '/api/records/') + id;
-    const payload = kind === 'doc' ? { title: nv } : { collection: nv };
     try {
-      await api(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      name = nv;
-      document.getElementById('detail-saved').textContent = 'Đã lưu tên';
-      refreshSavedCount();
+      await api('/api/documents/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: nv }) });
+      name = nv; document.getElementById('detail-saved').textContent = 'Đã lưu tên'; refreshSavedCount();
     } catch (err) { document.getElementById('detail-saved').textContent = 'Lỗi: ' + err.message; }
   };
-  input.addEventListener('change', saveName);
+  input.addEventListener('change', save);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
 }
+
+// --- Chi tiết BẢN GHI: sửa nhóm + các trường (thêm/xóa) rồi lưu ---
+function fieldRowHtml(k, v) {
+  return `<div class="field-row">
+    <input class="f-key" placeholder="Tên trường" value="${esc(k)}" />
+    <input class="f-val" placeholder="Giá trị" value="${esc(v)}" />
+    <button type="button" class="f-del" title="Xóa trường">×</button>
+  </div>`;
+}
+function openRecDetail(id) {
+  const body = document.getElementById('data-modal-body');
+  const r = savedRecs.find((x) => x.id == id);
+  if (!r) { body.innerHTML = '<div class="empty">Không tìm thấy bản ghi.</div>'; return; }
+  const entries = Object.entries(r.data || {});
+  body.innerHTML = detailBarHtml('Bản ghi', ' rec') + `
+    <label class="detail-lbl">Tên nhóm</label>
+    <input class="detail-title-input rec-coll" value="${esc(r.collection || 'chung')}" />
+    <label class="detail-lbl" style="margin-top:16px">Các trường (sửa trực tiếp)</label>
+    <div class="rec-fields">${(entries.length ? entries : [['', '']]).map(([k, v]) => fieldRowHtml(k, v)).join('')}</div>
+    <button type="button" class="btn-ghost rec-add" style="margin-top:4px">+ Thêm trường</button>
+    <div class="form-actions">
+      <button type="button" class="btn-primary rec-save">Lưu thay đổi</button>
+      <span class="detail-saved" id="detail-saved"></span>
+    </div>`;
+  const fieldsEl = body.querySelector('.rec-fields');
+  body.querySelector('.rec-add').addEventListener('click', () => fieldsEl.insertAdjacentHTML('beforeend', fieldRowHtml('', '')));
+  fieldsEl.addEventListener('click', (e) => { const d = e.target.closest('.f-del'); if (d) d.closest('.field-row').remove(); });
+  body.querySelector('.rec-save').addEventListener('click', async () => {
+    const collection = body.querySelector('.rec-coll').value.trim();
+    const data = {};
+    body.querySelectorAll('.field-row').forEach((row) => {
+      const k = row.querySelector('.f-key').value.trim();
+      if (k) data[k] = row.querySelector('.f-val').value.trim();
+    });
+    const saved = document.getElementById('detail-saved');
+    if (!Object.keys(data).length) { saved.textContent = 'Cần ít nhất một trường có tên.'; return; }
+    try {
+      await api('/api/records/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ collection, data }) });
+      r.collection = collection || 'chung'; r.data = data;
+      saved.textContent = 'Đã lưu thay đổi';
+      refreshSavedCount();
+    } catch (err) { saved.textContent = 'Lỗi: ' + err.message; }
+  });
+}
+
+function openDetail(kind, id) { return kind === 'doc' ? openDocDetail(id) : openRecDetail(id); }
 
 // Cập nhật số đếm trên thanh (không mở popup)
 async function refreshSavedCount() {
