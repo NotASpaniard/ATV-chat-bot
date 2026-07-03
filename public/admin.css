@@ -153,10 +153,6 @@ tr:last-child td { border-bottom: none; }
 .chat-log .u { color: var(--accent-strong); }
 .chat-log .a { color: var(--text); }
 
-/* mẫu câu lệnh */
-.tpl-card { border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--surface-2); }
-.tpl-card .tpl-del { align-self: flex-start; }
-
 /* trạng thái hệ thống */
 .stat-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
 .stat-row:last-child { border-bottom: none; }
@@ -259,6 +255,13 @@ tr:last-child td { border-bottom: none; }
 }
 .modal-panel .rec-fields input:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 .modal-panel .form-actions { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
+.modal-panel textarea {
+  width: 100%; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+  font-size: 14px; font-family: inherit; line-height: 1.6; outline: none; resize: vertical;
+  transition: border var(--transition);
+}
+.modal-panel textarea:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 
 /* ô tải file sau khi xong: thu gọn 1 dòng */
 .up-done-row { display: flex; align-items: center; gap: 12px; }

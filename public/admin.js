@@ -8,8 +8,7 @@ document.querySelectorAll('.tab').forEach((btn) => {
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
     if (btn.dataset.tab === 'chat') loadSessions();
-    if (btn.dataset.tab === 'rules') loadRules();
-    if (btn.dataset.tab === 'tpl') loadTemplates();
+    if (btn.dataset.tab === 'config') { loadRules(); refreshTplCount(); }
     clearInterval(window._statusTimer);
     if (btn.dataset.tab === 'status') { loadStatus(); window._statusTimer = setInterval(loadStatus, 5000); }
   });
@@ -424,39 +423,72 @@ document.getElementById('rules-save').addEventListener('click', async (e) => {
   finally { btn.disabled = false; }
 });
 
-// ===== MẪU CÂU LỆNH =====
+// ===== MẪU CÂU LỆNH (popup: danh sách + chi tiết) =====
 let tplData = [];
-const tplStatus = document.getElementById('tpl-status');
-async function loadTemplates() {
-  try { tplData = (await api('/api/templates')).templates || []; renderTplEditor(); }
-  catch (err) { setStatus(tplStatus, 'Lỗi: ' + err.message, false); }
+async function saveTplArray() {
+  await api('/api/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templates: tplData }) });
+  document.getElementById('tpl-count').textContent = tplData.length || '';
 }
-function collectTpl() {
-  document.querySelectorAll('.tpl-name').forEach((n) => { if (tplData[+n.dataset.i]) tplData[+n.dataset.i].name = n.value; });
-  document.querySelectorAll('.tpl-content').forEach((c) => { if (tplData[+c.dataset.i]) tplData[+c.dataset.i].content = c.value; });
+async function refreshTplCount() {
+  try { tplData = (await api('/api/templates')).templates || []; document.getElementById('tpl-count').textContent = tplData.length || ''; }
+  catch {}
 }
-function renderTplEditor() {
-  const el = document.getElementById('tpl-editor');
-  el.innerHTML = tplData.length ? tplData.map((t, i) => `
-    <div class="tpl-card">
-      <input class="tpl-name" data-i="${i}" value="${esc(t.name)}" placeholder="Tên mẫu" />
-      <textarea class="tpl-content" data-i="${i}" rows="4" placeholder="Nội dung, dùng {{...}}">${esc(t.content)}</textarea>
-      <button class="tpl-del btn-ghost" type="button" data-i="${i}">Xóa mẫu</button>
-    </div>`).join('') : '<div class="empty">Chưa có mẫu nào.</div>';
+function renderTplList() {
+  const body = document.getElementById('tpl-modal-body');
+  document.getElementById('tpl-count').textContent = tplData.length || '';
+  const rows = tplData.map((t, i) => `<tr>
+    <td><button class="name-link" data-i="${i}">${esc(t.name || '(chưa đặt tên)')}</button></td>
+    <td class="row-acts"><button class="row-del" data-i="${i}" title="Xóa">${TRASH_SVG}</button></td></tr>`).join('');
+  body.innerHTML = `<button type="button" class="btn-ghost tpl-add-btn" style="margin-bottom:12px">+ Thêm mẫu</button>`
+    + (tplData.length
+      ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Tên mẫu</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : '<div class="empty">Chưa có mẫu nào.</div>');
 }
-document.getElementById('tpl-add').addEventListener('click', () => { collectTpl(); tplData.push({ name: '', content: '' }); renderTplEditor(); });
-document.getElementById('tpl-editor').addEventListener('click', (e) => {
-  const d = e.target.closest('.tpl-del'); if (!d) return;
-  collectTpl(); tplData.splice(+d.dataset.i, 1); renderTplEditor();
+function openTplDetail(i) {
+  const body = document.getElementById('tpl-modal-body');
+  const t = tplData[i]; if (!t) return;
+  body.innerHTML = detailBarHtml('Mẫu', '') + `
+    <label class="detail-lbl">Tên mẫu</label>
+    <input class="detail-title-input tpl-d-name" value="${esc(t.name || '')}" />
+    <label class="detail-lbl" style="margin-top:14px">Nội dung (dùng {{...}} cho chỗ cần điền)</label>
+    <textarea class="tpl-d-content" rows="10">${esc(t.content || '')}</textarea>
+    <div class="form-actions">
+      <button type="button" class="btn-primary tpl-d-save">Lưu mẫu</button>
+      <span class="detail-saved" id="detail-saved"></span>
+    </div>`;
+  body.querySelector('.tpl-d-save').addEventListener('click', async () => {
+    t.name = body.querySelector('.tpl-d-name').value.trim();
+    t.content = body.querySelector('.tpl-d-content').value;
+    const saved = document.getElementById('detail-saved');
+    try { await saveTplArray(); saved.textContent = 'Đã lưu'; }
+    catch (err) { saved.textContent = 'Lỗi: ' + err.message; }
+  });
+}
+
+const tplModal = document.getElementById('tpl-modal');
+document.getElementById('tpl-bar').addEventListener('click', async () => {
+  tplModal.classList.remove('hidden');
+  document.getElementById('tpl-modal-body').innerHTML = 'Đang tải…';
+  try { tplData = (await api('/api/templates')).templates || []; renderTplList(); }
+  catch (err) { document.getElementById('tpl-modal-body').innerHTML = '<div class="empty">Lỗi: ' + esc(err.message) + '</div>'; }
 });
-document.getElementById('tpl-save').addEventListener('click', async () => {
-  collectTpl();
-  tplData = tplData.filter((t) => (t.name || '').trim() || (t.content || '').trim());
-  try {
-    await api('/api/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templates: tplData }) });
-    setStatus(tplStatus, 'Đã lưu.', true); renderTplEditor();
-  } catch (err) { setStatus(tplStatus, 'Lỗi: ' + err.message, false); }
+document.getElementById('tpl-close').addEventListener('click', () => tplModal.classList.add('hidden'));
+tplModal.addEventListener('click', (e) => { if (e.target === tplModal) tplModal.classList.add('hidden'); });
+document.getElementById('tpl-modal-body').addEventListener('click', async (e) => {
+  const add = e.target.closest('.tpl-add-btn');
+  const nameLink = e.target.closest('.name-link');
+  const del = e.target.closest('.row-del');
+  const back = e.target.closest('.detail-back');
+  if (back) { renderTplList(); return; }
+  if (add) { tplData.push({ name: '', content: '' }); try { await saveTplArray(); } catch {} openTplDetail(tplData.length - 1); return; }
+  if (nameLink) { openTplDetail(+nameLink.dataset.i); return; }
+  if (del) {
+    if (!confirm('Xóa mẫu này?')) return;
+    tplData.splice(+del.dataset.i, 1);
+    try { await saveTplArray(); renderTplList(); } catch (err) { alert('Lỗi: ' + err.message); }
+  }
 });
+refreshTplCount();
 
 // ===== TRẠNG THÁI HỆ THỐNG =====
 async function loadStatus() {
