@@ -87,6 +87,13 @@ form label { display: block; font-size: 13.5px; color: var(--text-muted); margin
 }
 .up-file::file-selector-button:hover, .dropzone input[type=file]::file-selector-button:hover { background: var(--accent-strong); }
 
+/* khung cuộn bao các ô tải file: không kéo dài vô tận, cuộn lên xuống bên trong */
+.upload-scroll {
+  max-height: 420px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); padding: 12px;
+}
+
 /* nhiều ô upload độc lập */
 #upload-cards { display: flex; flex-direction: column; gap: 12px; }
 .up-card {
