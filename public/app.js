@@ -386,7 +386,10 @@ function addBubble(who, text, opts = {}) {
   row.className = 'msg ' + who;
   const avatar = document.createElement('div');
   avatar.className = 'avatar';
-  avatar.innerHTML = AVATAR_SVG[who] || AVATAR_SVG.bot;
+  // Avatar bot = icon con vật theo theme (hổ/bạch tuộc/vẹt); user giữ icon người.
+  avatar.innerHTML = who === 'bot'
+    ? ((window.AVTTheme && window.AVTTheme.animal) ? window.AVTTheme.animal() : AVATAR_SVG.bot)
+    : (AVATAR_SVG[who] || AVATAR_SVG.bot);
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   if (opts.thinking) bubble.innerHTML = '<span class="dots"><i></i><i></i><i></i></span>';

@@ -11,6 +11,18 @@
   };
   const LABEL = { light: 'Sáng', dark: 'Tối', coffee: 'Cà phê' };
 
+  // Logo (icon con vật) của chatbot theo từng theme:
+  //  trắng/sáng -> hổ, đen/tối -> bạch tuộc, cà phê -> vẹt
+  const ANIMALS = {
+    light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6.5 4 4M18 6.5 20 4"/><path d="M6.5 6C5 7.4 4 9.6 4 12c0 4.4 3.6 8 8 8s8-3.6 8-8c0-2.4-1-4.6-2.5-6"/><circle cx="9.5" cy="11" r="0.7" fill="currentColor" stroke="none"/><circle cx="14.5" cy="11" r="0.7" fill="currentColor" stroke="none"/><path d="M12 13v1.6M10.6 15.4c.4.5 2.4.5 2.8 0"/><path d="M4.2 10 7 10.4M19.8 10 17 10.4M4.6 13.4 7 13M19.4 13.4 17 13"/></svg>',
+    dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5c3.6 0 6.5 2.7 6.5 6v2.4c0 .9-.7 1.6-1.6 1.6H7.1c-.9 0-1.6-.7-1.6-1.6V9.5c0-3.3 2.9-6 6.5-6z"/><circle cx="9.7" cy="9.6" r="0.75" fill="currentColor" stroke="none"/><circle cx="14.3" cy="9.6" r="0.75" fill="currentColor" stroke="none"/><path d="M6 13.6c-1.2.3-2 1.3-2 2.7M9 13.6c-.6 1.2-.7 2.7-.2 4M12 13.6v4.3M15 13.6c.6 1.2.7 2.7.2 4M18 13.6c1.2.3 2 1.3 2 2.7"/></svg>',
+    coffee: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3.2c-4 0-6.6 3.2-6.6 7.1 0 5.3 3 10.5 6.1 10.5 2.2 0 3.9-1.8 3.9-4.1"/><path d="M13 3.2c2.3 0 4.1 1.7 4.1 3.8 0 1.5-.8 2.7-2.1 3.3"/><path d="M17 6.6 20.6 7.4 17 9.3"/><circle cx="13.7" cy="6.2" r="0.65" fill="currentColor" stroke="none"/><path d="M16.4 14.6l3.3-.7-2.5 2.3"/></svg>',
+  };
+  function renderLogos(t) {
+    const svg = ANIMALS[t] || ANIMALS.light;
+    document.querySelectorAll('.logo, .w-logo, .msg.bot .avatar').forEach((el) => { el.innerHTML = svg; });
+  }
+
   function current() {
     const t = localStorage.getItem(KEY);
     return THEMES.includes(t) ? t : 'light';
@@ -19,6 +31,7 @@
     document.documentElement.setAttribute('data-theme', t);
     localStorage.setItem(KEY, t);
     render(t);
+    renderLogos(t);
   }
   function render(t) {
     const btn = document.getElementById('theme-btn');
@@ -50,6 +63,7 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     render(current());
+    renderLogos(current());
     const btn = document.getElementById('theme-btn');
     if (btn) btn.addEventListener('click', next);
     renderMem();
@@ -57,5 +71,5 @@
     if (mb) mb.addEventListener('click', toggleMem);
   });
 
-  window.AVTTheme = { current, apply, next };
+  window.AVTTheme = { current, apply, next, animal: () => ANIMALS[current()] || ANIMALS.light };
 })();
