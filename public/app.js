@@ -543,6 +543,76 @@ function setBusy(v) { busy = v; sendBtn.disabled = v; input.disabled = v; }
 function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
+// ===== HƯỚNG DẪN LẦN ĐẦU (tour) =====
+const TOUR_STEPS = [
+  { sel: '#input', title: 'Ô nhập câu hỏi', text: 'Gõ câu hỏi ở đây rồi nhấn Enter để gửi (Shift+Enter để xuống dòng).' },
+  { sel: '#advise-toggle', title: 'Tư vấn tối ưu', text: 'Bật lên rồi nhập yêu cầu + số lượng — bot tự chọn phương án tối ưu từ bảng giá và tính tiền chính xác.' },
+  { sel: '#tpl-btn', title: 'Mẫu câu lệnh', text: 'Chèn nhanh các mẫu soạn sẵn (báo giá, email chào hàng…).' },
+  { sel: '#clear-btn', title: 'Cuộc trò chuyện mới', text: 'Tạo một cuộc trò chuyện mới, tách biệt với các cuộc trước.' },
+  { sel: '#convo-search', title: 'Tìm kiếm', text: 'Tìm nhanh trong lịch sử chat và tài liệu đã lưu.' },
+  { sel: '.side-tools', title: 'Bảng công cụ', text: 'Quản trị dữ liệu (nhập bảng giá, tài liệu), đổi giao diện, bật/tắt ghi nhớ, và xem trạng thái máy.' },
+  { sel: '#model-tag', title: 'Model AI', text: 'Chọn, tải hoặc xóa model. Máy mạnh chọn model lớn để trả lời thông minh hơn.' },
+];
+let tourIdx = 0;
+const tourEl = document.getElementById('tour');
+function showTourStep(i) {
+  const step = TOUR_STEPS[i];
+  const el = step && document.querySelector(step.sel);
+  if (!el) { // phần tử không có -> bỏ qua
+    if (i + 1 < TOUR_STEPS.length) return showTourStep(i + 1);
+    return endTour();
+  }
+  const r = el.getBoundingClientRect();
+  const pad = 6;
+  const hole = document.getElementById('tour-hole');
+  hole.style.left = (r.left - pad) + 'px';
+  hole.style.top = (r.top - pad) + 'px';
+  hole.style.width = (r.width + pad * 2) + 'px';
+  hole.style.height = (r.height + pad * 2) + 'px';
+  document.getElementById('tour-step').textContent = `Bước ${i + 1}/${TOUR_STEPS.length}`;
+  document.getElementById('tour-title').textContent = step.title;
+  document.getElementById('tour-text').textContent = step.text;
+  const box = document.getElementById('tour-box');
+  const arrow = document.getElementById('tour-arrow');
+  box.style.visibility = 'hidden';
+  requestAnimationFrame(() => {
+    const bw = box.offsetWidth, bh = box.offsetHeight;
+    const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
+    let top, dir;
+    if (r.bottom + gap + bh <= vh) { top = r.bottom + gap; dir = 'up'; }
+    else { top = Math.max(12, r.top - gap - bh); dir = 'down'; }
+    let left = r.left + r.width / 2 - bw / 2;
+    left = Math.max(12, Math.min(left, vw - bw - 12));
+    box.style.top = top + 'px';
+    box.style.left = left + 'px';
+    arrow.className = 'tour-arrow ' + dir;
+    arrow.style.left = Math.max(18, Math.min(r.left + r.width / 2 - left, bw - 18)) + 'px';
+    box.style.visibility = 'visible';
+  });
+}
+function endTour() {
+  if (document.getElementById('tour-noshow').checked) localStorage.setItem('avt-tour-done', '1');
+  tourEl.classList.add('hidden');
+  window.removeEventListener('resize', tourResize);
+}
+function tourResize() { showTourStep(tourIdx); }
+function startTour() {
+  tourIdx = 0;
+  tourEl.classList.remove('hidden');
+  showTourStep(0);
+  window.addEventListener('resize', tourResize);
+}
+if (tourEl) {
+  tourEl.addEventListener('click', (e) => {
+    if (e.target.closest('.tour-foot')) return; // bấm nút đóng / ô tích thì không chuyển bước
+    tourIdx++;
+    if (tourIdx >= TOUR_STEPS.length) endTour();
+    else showTourStep(tourIdx);
+  });
+  document.getElementById('tour-close').addEventListener('click', (e) => { e.stopPropagation(); endTour(); });
+  if (!localStorage.getItem('avt-tour-done')) setTimeout(startTour, 400);
+}
+
 // ===== TRẠNG THÁI HỆ THỐNG (popup) =====
 const statusBtn = document.getElementById('status-btn');
 const statusModal = document.getElementById('status-modal');
