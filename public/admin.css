@@ -162,3 +162,60 @@ tr:last-child td { border-bottom: none; }
 .stat-row:last-child { border-bottom: none; }
 .stat-row > span { color: var(--text-muted); }
 .lvl { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 2px 9px; border: 1px solid; border-radius: 999px; margin-left: 4px; }
+
+/* ===== Thanh "Dữ liệu đã lưu" mở popup ===== */
+.saved-bar {
+  display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 22px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px;
+  padding: 14px 16px; cursor: pointer; font-size: 15px; font-weight: 550; color: var(--text);
+  transition: all var(--transition);
+}
+.saved-bar:hover { border-color: var(--accent); }
+.saved-bar svg { width: 19px; height: 19px; }
+.saved-bar .saved-count {
+  min-width: 22px; text-align: center; font-size: 12.5px; font-weight: 700;
+  background: var(--accent); color: var(--on-accent); border-radius: 999px; padding: 1px 8px;
+}
+.saved-bar .saved-caret { margin-left: auto; color: var(--text-muted); }
+
+/* ===== Popup (modal) ===== */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: color-mix(in srgb, #000 45%, transparent);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.modal-overlay.hidden { display: none; }
+.modal-panel {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); width: 100%; max-width: 860px; max-height: 84vh;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.modal-head h3 { margin: 0; font-size: 16px; font-weight: 650; }
+.modal-close {
+  display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+  border-radius: 10px; cursor: pointer; transition: all var(--transition);
+}
+.modal-close svg { width: 17px; height: 17px; }
+.modal-close:hover { color: var(--text); border-color: var(--border-strong); }
+.modal-body { padding: 16px 20px; overflow-y: auto; }
+
+.data-table-wrap { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.data-table th, .data-table td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.data-table thead th { color: var(--text-muted); font-weight: 600; white-space: nowrap; position: sticky; top: 0; background: var(--surface); }
+.data-table tbody tr:hover { background: var(--surface-2); }
+.data-table .cell-name { font-weight: 550; max-width: 240px; overflow-wrap: anywhere; }
+.data-table .cell-detail { max-width: 360px; overflow-wrap: anywhere; }
+.type-tag { display: inline-block; font-size: 11.5px; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); border: 1px solid var(--border); white-space: nowrap; }
+.type-tag.rec { background: color-mix(in srgb, var(--dot-online) 14%, transparent); }
+.row-acts { white-space: nowrap; text-align: right; }
+.row-acts button {
+  display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+  border-radius: 9px; cursor: pointer; margin-left: 6px; transition: all var(--transition);
+}
+.row-acts button svg { width: 16px; height: 16px; }
+.row-acts .row-edit:hover { color: var(--accent-strong); border-color: var(--accent); }
+.row-acts .row-del:hover { color: var(--danger); border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }

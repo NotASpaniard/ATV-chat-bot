@@ -7,7 +7,6 @@ document.querySelectorAll('.tab').forEach((btn) => {
     document.querySelectorAll('.tab-content').forEach((c) => c.classList.add('hidden'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
-    if (btn.dataset.tab === 'data') { loadRecs(); loadDocs(); }
     if (btn.dataset.tab === 'chat') loadSessions();
     if (btn.dataset.tab === 'rules') loadRules();
     if (btn.dataset.tab === 'tpl') loadTemplates();
@@ -79,6 +78,7 @@ document.getElementById('man-form').addEventListener('submit', async (e) => {
     setStatus(manStatus, 'Đã lưu bản ghi.', true);
     manFields.innerHTML = '';
     addFieldRow('Tên', ''); addFieldRow('Đơn giá', '');
+    refreshSavedCount();
   } catch (err) {
     setStatus(manStatus, 'Lỗi: ' + err.message, false);
   } finally { btn.disabled = false; }
@@ -141,6 +141,7 @@ function makeUploadCard() {
     bodyEl.querySelectorAll('button, input, textarea').forEach((el) => (el.disabled = true));
     fileEl.disabled = true;
     card.classList.add('done');
+    refreshSavedCount();
   };
 
   fileEl.addEventListener('change', async () => {
@@ -232,41 +233,78 @@ function makeUploadCard() {
 
 if (uploadCards) uploadCards.appendChild(makeUploadCard());
 
-// ===== DỮ LIỆU ĐÃ LƯU =====
+// ===== DỮ LIỆU ĐÃ LƯU (popup bảng) =====
+const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg>';
+const PENCIL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+
 function recSummary(r) {
   const entries = Object.entries(r.data || {});
   return entries.map(([k, v]) => `${esc(k)}: <b>${esc(v)}</b>`).join(' · ') || '(trống)';
 }
-async function loadRecs() {
-  const el = document.getElementById('rec-list');
-  try {
-    const recs = await api('/api/records');
-    if (!recs.length) { el.innerHTML = '<div class="empty">Chưa có bản ghi.</div>'; return; }
-    el.innerHTML = recs.map((r) => `
-      <div class="data-item">
-        <div>
-          <div>${recSummary(r)}</div>
-          <div class="meta">${esc(r.collection)}</div>
-        </div>
-        <button class="del" data-id="${r.id}" data-kind="rec">Xóa</button>
-      </div>`).join('');
-  } catch (err) { el.innerHTML = '<div class="empty">Lỗi tải: ' + esc(err.message) + '</div>'; }
+
+function rowActions(kind, id, name) {
+  return `<td class="row-acts">
+    <button class="row-edit" title="Sửa tên" data-kind="${kind}" data-id="${id}" data-name="${esc(name)}">${PENCIL_SVG}</button>
+    <button class="row-del" title="Xóa" data-kind="${kind}" data-id="${id}">${TRASH_SVG}</button>
+  </td>`;
 }
-async function loadDocs() {
-  const el = document.getElementById('doc-list');
+
+async function loadSavedData() {
+  const body = document.getElementById('data-modal-body');
+  body.innerHTML = 'Đang tải…';
   try {
-    const docs = await api('/api/documents');
-    if (!docs.length) { el.innerHTML = '<div class="empty">Chưa có tài liệu.</div>'; return; }
-    el.innerHTML = docs.map((d) => `
-      <div class="data-item">
-        <div>
-          <div>${esc(d.title)}</div>
-          <div class="meta">${d.chunks} đoạn${d.source ? ' · ' + esc(d.source) : ''}</div>
-        </div>
-        <button class="del" data-id="${d.id}" data-kind="doc">Xóa</button>
-      </div>`).join('');
-  } catch (err) { el.innerHTML = '<div class="empty">Lỗi tải: ' + esc(err.message) + '</div>'; }
+    const [recs, docs] = await Promise.all([api('/api/records'), api('/api/documents')]);
+    document.getElementById('saved-count').textContent = (recs.length + docs.length) || '';
+    if (!recs.length && !docs.length) { body.innerHTML = '<div class="empty">Chưa có dữ liệu nào.</div>'; return; }
+    const rows = [];
+    for (const d of docs) rows.push(`<tr>
+      <td class="cell-name">${esc(d.title)}</td>
+      <td><span class="type-tag">Tài liệu</span></td>
+      <td class="meta cell-detail">${d.chunks} đoạn${d.source ? ' · ' + esc(d.source) : ''}</td>
+      ${rowActions('doc', d.id, d.title)}</tr>`);
+    for (const r of recs) rows.push(`<tr>
+      <td class="cell-name">${esc(r.collection || 'chung')}</td>
+      <td><span class="type-tag rec">Bản ghi</span></td>
+      <td class="meta cell-detail">${recSummary(r)}</td>
+      ${rowActions('rec', r.id, r.collection || '')}</tr>`);
+    body.innerHTML = `<div class="data-table-wrap"><table class="data-table">
+      <thead><tr><th>Tên</th><th>Loại</th><th>Chi tiết</th><th></th></tr></thead>
+      <tbody>${rows.join('')}</tbody></table></div>`;
+  } catch (err) { body.innerHTML = '<div class="empty">Lỗi tải: ' + esc(err.message) + '</div>'; }
 }
+
+// Cập nhật số đếm trên thanh (không mở popup)
+async function refreshSavedCount() {
+  try {
+    const [recs, docs] = await Promise.all([api('/api/records'), api('/api/documents')]);
+    document.getElementById('saved-count').textContent = (recs.length + docs.length) || '';
+  } catch {}
+}
+
+// Mở/đóng popup + thao tác sửa tên / xóa
+const dataModal = document.getElementById('data-modal');
+document.getElementById('saved-bar').addEventListener('click', () => { dataModal.classList.remove('hidden'); loadSavedData(); });
+document.getElementById('data-close').addEventListener('click', () => dataModal.classList.add('hidden'));
+dataModal.addEventListener('click', (e) => { if (e.target === dataModal) dataModal.classList.add('hidden'); });
+document.getElementById('data-modal-body').addEventListener('click', async (e) => {
+  const edit = e.target.closest('.row-edit');
+  const del = e.target.closest('.row-del');
+  if (edit) {
+    const kind = edit.dataset.kind, cur = edit.dataset.name || '';
+    const nv = prompt(kind === 'doc' ? 'Tên tài liệu mới:' : 'Tên nhóm mới:', cur);
+    if (nv == null || !nv.trim() || nv.trim() === cur) return;
+    const url = (kind === 'doc' ? '/api/documents/' : '/api/records/') + edit.dataset.id;
+    const payload = kind === 'doc' ? { title: nv.trim() } : { collection: nv.trim() };
+    try { await api(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); loadSavedData(); }
+    catch (err) { alert('Lỗi sửa tên: ' + err.message); }
+  } else if (del) {
+    if (!confirm('Xóa mục này?')) return;
+    const url = (del.dataset.kind === 'doc' ? '/api/documents/' : '/api/records/') + del.dataset.id;
+    try { await api(url, { method: 'DELETE' }); loadSavedData(); }
+    catch (err) { alert('Lỗi xóa: ' + err.message); }
+  }
+});
+refreshSavedCount();
 
 // ===== LỊCH SỬ CHAT =====
 async function loadSessions() {
@@ -392,15 +430,5 @@ document.addEventListener('click', async (e) => {
         `<div class="${m.role === 'user' ? 'u' : 'a'}"><b>${m.role === 'user' ? 'Người dùng' : 'Bot'}:</b> ${esc(m.content)}</div>`
       ).join('<br>');
     } catch (err) { log.textContent = 'Lỗi: ' + err.message; }
-    return;
   }
-
-  const kind = del.dataset.kind;
-  if (!kind) return;
-  if (!confirm('Xóa mục này?')) return;
-  const url = kind === 'doc' ? '/api/documents/' : '/api/records/';
-  try {
-    await api(url + del.dataset.id, { method: 'DELETE' });
-    kind === 'doc' ? loadDocs() : loadRecs();
-  } catch (err) { alert('Lỗi xóa: ' + err.message); }
 });

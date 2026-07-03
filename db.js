@@ -254,6 +254,10 @@ async function deleteDocument(id) {
   await pg.query('DELETE FROM documents WHERE id=$1', [id]);
 }
 
+async function renameDocument(id, title) {
+  await pg.query('UPDATE documents SET title=$1 WHERE id=$2', [clean(title), id]);
+}
+
 // ---- Bản ghi LINH HOẠT ----
 // Ghép collection + tất cả trường trong data thành văn bản để tạo embedding (tìm kiếm được).
 function recordToText(collection, data) {
@@ -331,6 +335,22 @@ async function listRecords() {
 async function deleteRecord(id) {
   await pg.query(`DELETE FROM knowledge WHERE source_type='record' AND source_id=$1`, [id]);
   await pg.query('DELETE FROM records WHERE id=$1', [id]);
+}
+
+// Đổi tên NHÓM của bản ghi + cập nhật lại text/embedding cho RAG khớp.
+async function renameRecord(id, collection) {
+  const coll = clean((collection || 'chung').trim()) || 'chung';
+  await pg.query('UPDATE records SET collection=$1 WHERE id=$2', [coll, id]);
+  const { rows } = await pg.query('SELECT collection, data FROM records WHERE id=$1', [id]);
+  if (!rows.length) return;
+  const text = recordToText(rows[0].collection, rows[0].data);
+  try {
+    const vec = await embed('search_document: ' + text);
+    await pg.query(
+      `UPDATE knowledge SET content=$1, embedding=$2::vector WHERE source_type='record' AND source_id=$3`,
+      [text, toVectorLiteral(vec), id]
+    );
+  } catch (e) { console.error('renameRecord re-embed lỗi:', e.message); }
 }
 
 // ---- Tìm kiếm ngữ nghĩa (RAG) ----
@@ -426,8 +446,8 @@ async function retrieve(queryText, k = 5, includeMemory = false) {
 module.exports = {
   init,
   ensureSession, saveMessage, getMessages, listSessions, deleteSession, saveMemory,
-  addDocument, listDocuments, deleteDocument,
-  addRecord, addRecordsBulk, listRecords, deleteRecord, reindexRecords,
+  addDocument, listDocuments, deleteDocument, renameDocument,
+  addRecord, addRecordsBulk, listRecords, deleteRecord, renameRecord, reindexRecords,
   retrieve, retrieveRecords, retrieveDevices, embedOk,
   getSetting, setSetting, getRules,
   getTemplates, setTemplates, search,

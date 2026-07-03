@@ -522,6 +522,12 @@ const server = http.createServer(async (req, res) => {
       const jobId = startJob((onProgress) => db.addDocument({ title, source, content }, onProgress));
       return sendJson(res, 200, { jobId });
     }
+    if (req.method === 'PUT' && p.startsWith('/api/documents/')) {
+      const { title } = await readJson(req);
+      if (!title || !title.trim()) return sendJson(res, 400, { error: 'Thiếu tên mới' });
+      await db.renameDocument(Number(p.split('/')[3]), title.trim());
+      return sendJson(res, 200, { ok: true });
+    }
     if (req.method === 'DELETE' && p.startsWith('/api/documents/')) {
       await db.deleteDocument(Number(p.split('/')[3]));
       return sendJson(res, 200, { ok: true });
@@ -588,6 +594,12 @@ const server = http.createServer(async (req, res) => {
       } finally {
         fs.unlink(up.path, () => {});
       }
+    }
+    if (req.method === 'PUT' && p.startsWith('/api/records/')) {
+      const { collection } = await readJson(req);
+      if (!collection || !collection.trim()) return sendJson(res, 400, { error: 'Thiếu tên nhóm mới' });
+      await db.renameRecord(Number(p.split('/')[3]), collection.trim());
+      return sendJson(res, 200, { ok: true });
     }
     if (req.method === 'DELETE' && p.startsWith('/api/records/')) {
       await db.deleteRecord(Number(p.split('/')[3]));
