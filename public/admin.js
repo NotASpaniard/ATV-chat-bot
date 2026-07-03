@@ -286,20 +286,42 @@ async function openDocDetail(id) {
   let name = doc.title || '';
   body.innerHTML = detailBarHtml('Tài liệu', '') + `
     <label class="detail-lbl">Tên tài liệu (sửa rồi Enter để lưu)</label>
-    <input class="detail-title-input" value="${esc(name)}" />
-    <span class="detail-saved" id="detail-saved"></span>
-    <div class="detail-content"><pre class="detail-text">${esc(doc.content || '(trống)')}</pre></div>`;
-  const input = body.querySelector('.detail-title-input');
-  const save = async () => {
-    const nv = input.value.trim();
+    <input class="detail-title-input doc-title" value="${esc(name)}" />
+    <label class="detail-lbl" style="margin-top:14px">Nội dung (sửa xong bấm Lưu — hệ thống sẽ tạo lại chỉ mục tìm kiếm)</label>
+    <textarea class="doc-content-edit" rows="14">${esc(doc.content || '')}</textarea>
+    <div class="form-actions">
+      <button type="button" class="btn-primary doc-save">Lưu nội dung</button>
+      <span class="detail-saved" id="detail-saved"></span>
+    </div>`;
+  const titleInput = body.querySelector('.doc-title');
+  const saved = () => document.getElementById('detail-saved');
+  const saveTitle = async () => {
+    const nv = titleInput.value.trim();
     if (!nv || nv === name) return;
     try {
       await api('/api/documents/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: nv }) });
-      name = nv; document.getElementById('detail-saved').textContent = 'Đã lưu tên'; refreshSavedCount();
-    } catch (err) { document.getElementById('detail-saved').textContent = 'Lỗi: ' + err.message; }
+      name = nv; saved().textContent = 'Đã lưu tên'; refreshSavedCount();
+    } catch (err) { saved().textContent = 'Lỗi: ' + err.message; }
   };
-  input.addEventListener('change', save);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+  titleInput.addEventListener('change', saveTitle);
+  titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); titleInput.blur(); } });
+  body.querySelector('.doc-save').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const content = body.querySelector('.doc-content-edit').value;
+    if (!content.trim()) { saved().textContent = 'Nội dung trống.'; return; }
+    btn.disabled = true; saved().textContent = 'Đang lưu & tạo lại chỉ mục…';
+    try {
+      const { jobId } = await api('/api/documents/' + id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: titleInput.value.trim() || name, content }),
+      });
+      const result = await pollJob(jobId, (done, total) => { saved().textContent = `Đang xử lý ${done}/${total}…`; });
+      name = titleInput.value.trim() || name;
+      saved().textContent = `Đã lưu nội dung (${(result && result.chunks) || 0} đoạn)`;
+      refreshSavedCount();
+    } catch (err) { saved().textContent = 'Lỗi: ' + err.message; }
+    finally { btn.disabled = false; }
+  });
 }
 
 // --- Chi tiết BẢN GHI: sửa nhóm + các trường (thêm/xóa) rồi lưu ---

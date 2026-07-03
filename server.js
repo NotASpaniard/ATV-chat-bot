@@ -527,9 +527,16 @@ const server = http.createServer(async (req, res) => {
       return doc ? sendJson(res, 200, doc) : sendJson(res, 404, { error: 'Không tìm thấy tài liệu' });
     }
     if (req.method === 'PUT' && p.startsWith('/api/documents/')) {
-      const { title } = await readJson(req);
+      const id = Number(p.split('/')[3]);
+      const { title, content } = await readJson(req);
+      if (content != null) {
+        if (!String(content).trim()) return sendJson(res, 400, { error: 'Nội dung trống' });
+        if (title != null && title.trim()) await db.renameDocument(id, title.trim());
+        const jobId = startJob((onProgress) => db.updateDocumentContent(id, content, onProgress));
+        return sendJson(res, 200, { jobId });
+      }
       if (!title || !title.trim()) return sendJson(res, 400, { error: 'Thiếu tên mới' });
-      await db.renameDocument(Number(p.split('/')[3]), title.trim());
+      await db.renameDocument(id, title.trim());
       return sendJson(res, 200, { ok: true });
     }
     if (req.method === 'DELETE' && p.startsWith('/api/documents/')) {

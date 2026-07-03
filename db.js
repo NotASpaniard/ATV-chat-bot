@@ -258,6 +258,23 @@ async function renameDocument(id, title) {
   await pg.query('UPDATE documents SET title=$1 WHERE id=$2', [clean(title), id]);
 }
 
+// Sửa nội dung tài liệu: xóa các đoạn cũ rồi chunk + embed lại (chạy nền qua job).
+async function updateDocumentContent(id, content, onProgress) {
+  const exists = (await pg.query('SELECT id FROM documents WHERE id=$1', [id])).rows[0];
+  if (!exists) throw new Error('Không tìm thấy tài liệu');
+  await pg.query(`DELETE FROM knowledge WHERE source_type='document' AND source_id=$1`, [id]);
+  const chunks = chunkText(clean(content));
+  await runPool(chunks.length, async (i) => {
+    const vec = await embed('search_document: ' + chunks[i]);
+    await pg.query(
+      `INSERT INTO knowledge (source_type, source_id, chunk_index, content, embedding)
+       VALUES ('document', $1, $2, $3, $4::vector)`,
+      [id, i, chunks[i], toVectorLiteral(vec)]
+    );
+  }, onProgress);
+  return { id, chunks: chunks.length };
+}
+
 // Lấy 1 tài liệu kèm nội dung đầy đủ (ghép các đoạn đã tách).
 async function getDocument(id) {
   const meta = (await pg.query('SELECT id, title, source, created_at FROM documents WHERE id=$1', [id])).rows[0];
@@ -457,7 +474,7 @@ async function retrieve(queryText, k = 5, includeMemory = false) {
 module.exports = {
   init,
   ensureSession, saveMessage, getMessages, listSessions, deleteSession, saveMemory,
-  addDocument, listDocuments, deleteDocument, renameDocument, getDocument,
+  addDocument, listDocuments, deleteDocument, renameDocument, getDocument, updateDocumentContent,
   addRecord, addRecordsBulk, listRecords, deleteRecord, updateRecord, reindexRecords,
   retrieve, retrieveRecords, retrieveDevices, embedOk,
   getSetting, setSetting, getRules,
