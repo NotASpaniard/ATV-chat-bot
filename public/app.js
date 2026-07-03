@@ -539,3 +539,48 @@ function clearWelcome() { const w = messagesEl.querySelector('.welcome'); if (w)
 function setBusy(v) { busy = v; sendBtn.disabled = v; input.disabled = v; }
 function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// ===== TRẠNG THÁI HỆ THỐNG (popup) =====
+const statusBtn = document.getElementById('status-btn');
+const statusModal = document.getElementById('status-modal');
+let statusTimer = null;
+async function loadStatusPopup() {
+  const el = document.getElementById('status-modal-body');
+  const gb = (b) => (b ? (b / 1073741824).toFixed(1) + ' GB' : '—');
+  const badge = (level, text) => {
+    const col = level === 'good' ? 'var(--dot-online)' : level === 'ok' ? '#d9a441' : 'var(--danger)';
+    return `<span class="lvl" style="color:${col};border-color:${col}">${esc(text)}</span>`;
+  };
+  try {
+    const s = await (await fetch('/api/status')).json();
+    const oll = (s.ollama && s.ollama.length)
+      ? s.ollama.map((m) => `${esc(m.name)} <span class="tag">${esc(m.processor)}</span>`).join('<br>')
+      : '<span class="meta">Chưa nạp model nào</span>';
+    const c = s.compat || {};
+    el.innerHTML = `
+      <h4 class="stat-h">Tương thích phần cứng</h4>
+      <div class="stat-row"><span>CPU</span><div class="stat-val"><b>${esc(c.cpu || '?')}</b> · ${c.threads || '?'} luồng ${badge(c.cpuLevel, c.cpuLevel === 'good' ? 'Tốt' : c.cpuLevel === 'ok' ? 'Ổn' : 'Yếu')}<div class="meta">${esc(c.cpuNote || '')}</div></div></div>
+      <div class="stat-row"><span>GPU</span><div class="stat-val"><b>${esc(c.gpu || '?')}</b> ${badge(c.gpuLevel, c.hasNvidia ? 'Tăng tốc được' : 'Chỉ CPU')}<div class="meta">${esc(c.gpuNote || '')}</div></div></div>
+      <div class="stat-row"><span>RAM tổng</span><div class="stat-val"><b>${c.ramGB || '?'} GB</b> ${badge(c.ramLevel, c.ramLevel === 'good' ? 'Tốt' : c.ramLevel === 'ok' ? 'Ổn' : 'Ít')}</div></div>
+
+      <h4 class="stat-h mt">Đang chạy</h4>
+      <div class="stat-row"><span>Model đang dùng</span><b>${esc(s.model)}</b></div>
+      <div class="stat-row"><span>Model đang nạp</span><div class="stat-val">${oll}</div></div>
+      <div class="stat-row"><span>RAM sử dụng</span><b>${gb(s.ram.used)} / ${gb(s.ram.total)} · ${s.ram.usedPct}%</b></div>
+      <div class="bar"><div class="bar-fill" style="width:${s.ram.usedPct}%"></div></div>
+      ${s.disk ? `<div class="stat-row" style="margin-top:14px"><span>Ổ đĩa (còn trống)</span><b>${gb(s.disk.free)} / ${gb(s.disk.total)} · ${s.disk.freePct}%</b></div>
+      <div class="bar"><div class="bar-fill" style="width:${100 - s.disk.freePct}%"></div></div>` : ''}`;
+  } catch (err) { el.innerHTML = '<div class="empty">Lỗi: ' + esc(err.message) + '</div>'; }
+}
+function closeStatus() { statusModal.classList.add('hidden'); clearInterval(statusTimer); }
+if (statusBtn) {
+  statusBtn.addEventListener('click', () => {
+    statusModal.classList.remove('hidden');
+    document.getElementById('status-modal-body').innerHTML = 'Đang tải…';
+    loadStatusPopup();
+    clearInterval(statusTimer);
+    statusTimer = setInterval(loadStatusPopup, 5000);
+  });
+  document.getElementById('status-close').addEventListener('click', closeStatus);
+  statusModal.addEventListener('click', (e) => { if (e.target === statusModal) closeStatus(); });
+}

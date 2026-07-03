@@ -30,6 +30,9 @@
         <span class="side-spacer"></span>
         <button id="theme-btn" class="icon-btn" type="button" title="Đổi giao diện"></button>
         <button id="mem-btn" class="icon-btn" type="button" title="Ghi nhớ giữa các cuộc hội thoại"></button>
+        <button id="status-btn" class="icon-btn" type="button" title="Trạng thái hệ thống">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+        </button>
       </div>
 
       <button id="clear-btn" class="side-new" type="button" title="Cuộc trò chuyện mới">
@@ -89,6 +92,19 @@
         <div class="hint">Nội dung do AI tạo có thể chưa chính xác — vui lòng kiểm tra trước khi sử dụng chính thức.</div>
       </footer>
     </main>
+  </div>
+
+  <!-- POPUP: trạng thái hệ thống -->
+  <div id="status-modal" class="modal-overlay hidden">
+    <div class="modal-panel">
+      <div class="modal-head">
+        <h3>Trạng thái hệ thống</h3>
+        <button type="button" id="status-close" class="modal-close" title="Đóng">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" id="status-modal-body">Đang tải…</div>
+    </div>
   </div>
 
   <script src="/theme.js"></script>

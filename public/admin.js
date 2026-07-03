@@ -9,8 +9,6 @@ document.querySelectorAll('.tab').forEach((btn) => {
     document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
     if (btn.dataset.tab === 'chat') loadSessions();
     if (btn.dataset.tab === 'config') { loadRules(); refreshTplCount(); }
-    clearInterval(window._statusTimer);
-    if (btn.dataset.tab === 'status') { loadStatus(); window._statusTimer = setInterval(loadStatus, 5000); }
   });
 });
 
@@ -489,36 +487,6 @@ document.getElementById('tpl-modal-body').addEventListener('click', async (e) =>
   }
 });
 refreshTplCount();
-
-// ===== TRẠNG THÁI HỆ THỐNG =====
-async function loadStatus() {
-  const el = document.getElementById('status-body');
-  const gb = (b) => b ? (b / 1073741824).toFixed(1) + ' GB' : '—';
-  const badge = (level, text) => {
-    const col = level === 'good' ? 'var(--dot-online)' : level === 'ok' ? '#d9a441' : 'var(--danger)';
-    return `<span class="lvl" style="color:${col};border-color:${col}">${esc(text)}</span>`;
-  };
-  try {
-    const s = await api('/api/status');
-    const oll = (s.ollama && s.ollama.length)
-      ? s.ollama.map((m) => `${esc(m.name)} <span class="tag">${m.processor}</span>`).join('<br>')
-      : '<span class="meta">Chưa nạp model nào</span>';
-    const c = s.compat || {};
-    el.innerHTML = `
-      <h4 style="margin:0 0 4px">Tương thích phần cứng</h4>
-      <div class="stat-row"><span>CPU</span><div style="text-align:right"><b>${esc(c.cpu || '?')}</b> · ${c.threads || '?'} luồng ${badge(c.cpuLevel, c.cpuLevel === 'good' ? 'Tốt' : c.cpuLevel === 'ok' ? 'Ổn' : 'Yếu')}<div class="meta">${esc(c.cpuNote || '')}</div></div></div>
-      <div class="stat-row"><span>GPU</span><div style="text-align:right"><b>${esc(c.gpu || '?')}</b> ${badge(c.gpuLevel, c.hasNvidia ? 'Tăng tốc được' : 'Chỉ CPU')}<div class="meta">${esc(c.gpuNote || '')}</div></div></div>
-      <div class="stat-row"><span>RAM tổng</span><div style="text-align:right"><b>${c.ramGB || '?'} GB</b> ${badge(c.ramLevel, c.ramLevel === 'good' ? 'Tốt' : c.ramLevel === 'ok' ? 'Ổn' : 'Ít')}</div></div>
-
-      <h4 style="margin:20px 0 4px">Đang chạy</h4>
-      <div class="stat-row"><span>Model đang dùng</span><b>${esc(s.model)}</b></div>
-      <div class="stat-row"><span>Model đang nạp</span><div style="text-align:right">${oll}</div></div>
-      <div class="stat-row"><span>RAM sử dụng</span><b>${gb(s.ram.used)} / ${gb(s.ram.total)} · ${s.ram.usedPct}%</b></div>
-      <div class="bar"><div class="bar-fill" style="width:${s.ram.usedPct}%"></div></div>
-      ${s.disk ? `<div class="stat-row" style="margin-top:14px"><span>Ổ đĩa (còn trống)</span><b>${gb(s.disk.free)} / ${gb(s.disk.total)} · ${s.disk.freePct}%</b></div>
-      <div class="bar"><div class="bar-fill" style="width:${100 - s.disk.freePct}%"></div></div>` : ''}`;
-  } catch (err) { el.innerHTML = '<div class="empty">Lỗi: ' + esc(err.message) + '</div>'; }
-}
 
 // ===== xử lý chung: xem / xóa =====
 document.addEventListener('click', async (e) => {
