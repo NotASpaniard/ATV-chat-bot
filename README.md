@@ -15,8 +15,8 @@ Trợ lý AI chạy hoàn toàn trên máy chủ nội bộ doanh nghiệp. Khô
 
 ## Yêu cầu
 
-- Windows.
-- [Ollama](https://ollama.com) và Node.js 18+ (bản portable đã kèm sẵn, không cần cài).
+- Bản **portable**: Windows (đã kèm sẵn Node + Ollama, không cần cài gì).
+- Bản **mã nguồn**: Windows / macOS / Linux — cần tự cài [Ollama](https://ollama.com) và Node.js 18+.
 - 2 model: `qwen2.5:3b` (chat) và `bge-m3` (embedding cho RAG).
 
 ## Cách chạy
@@ -66,6 +66,33 @@ Sao chép `.env.example` thành `.env` rồi chỉnh nếu cần:
 - Dữ liệu nghiệp vụ (báo giá, hợp đồng, lịch sử chat) nằm trong thư mục `pgdata`, không rời khỏi máy.
 - Không mở cổng ra internet, không port-forward. Chỉ dùng trong mạng nội bộ.
 - `pgdata` và `.env` đã được loại khỏi git.
+
+## Phần mềm diệt virus & cảnh báo hệ điều hành
+
+Ứng dụng **không chứa mã độc**, nhưng vì bản portable đi kèm file thực thi
+(`node.exe`, `ollama.exe`) và script tự khởi động (`.bat`, `.ps1` tạo tác vụ
+chạy nền), một số phần mềm diệt virus / hệ điều hành có thể **cảnh báo nhầm**.
+Cách xử lý theo hệ điều hành:
+
+**Windows** (bản portable)
+- SmartScreen báo "Windows protected your PC": bấm **More info → Run anyway**.
+- Nên **chép qua USB/mạng nội bộ** thay vì tải từ trình duyệt (tránh "Mark of the Web").
+- Nếu Defender/Kaspersky chặn: thêm **thư mục giải nén vào ngoại lệ (exclusion/whitelist)**.
+- File hay bị soi nhất là `CaiTuKhoiDong.bat` (tạo tác vụ tự khởi động). Nếu bị
+  chặn, có thể **bỏ phần tự khởi động** và chỉ chạy thủ công bằng `Chatbot.bat`.
+- KHÔNG dùng bản đóng gói `.exe` (ps2exe) trên máy này — Kaspersky xóa nhầm; dùng `.bat`.
+
+**macOS** (chạy từ mã nguồn — bản portable Windows không chạy trên Mac)
+- Cài Node.js + Ollama, rồi `npm install` và `npm start` (xem mục Cách chạy).
+- Gatekeeper báo "không xác minh được nhà phát triển": **chuột phải → Open**, hoặc
+  gỡ cờ cách ly: `xattr -dr com.apple.quarantine <thư-mục>`.
+
+**Linux** (chạy từ mã nguồn)
+- Cài Node.js + Ollama, rồi `npm install` và `npm start`.
+- Thường không bị AV chặn; nếu cần thì cấp quyền chạy: `chmod +x` cho script.
+
+> Muốn hết sạch cảnh báo cần **ký số (code signing)** — cần mua chứng chỉ, hơi
+> quá mức cho dùng nội bộ. Cách thực tế nhất: thêm ngoại lệ AV cho thư mục app.
 
 ## Cấu trúc
 
