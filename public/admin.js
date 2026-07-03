@@ -576,5 +576,7 @@ if (tourEl) {
     else showTourStep(tourIdx);
   });
   document.getElementById('tour-close').addEventListener('click', (e) => { e.stopPropagation(); endTour(); });
+  const helpBtn = document.getElementById('help-btn');
+  if (helpBtn) helpBtn.addEventListener('click', startTour);
   if (!localStorage.getItem('avt-tour-admin-done')) setTimeout(startTour, 400);
 }
