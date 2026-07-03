@@ -277,7 +277,7 @@ async function loadConversation(id) {
       history = msgs.map((m) => ({ role: m.role, content: m.content }));
       for (const m of history) {
         const b = addBubble(m.role === 'user' ? 'user' : 'bot', m.content);
-        if (m.role !== 'user' && m.content.trim()) b.appendChild(botActions(m.content));
+        if (m.role !== 'user' && m.content.trim()) { b.innerHTML = renderMd(m.content); b.appendChild(botActions(m.content)); }
       }
       scrollToBottom();
       return;
@@ -362,6 +362,7 @@ async function send() {
     }
     if (acc.trim()) {
       history.push({ role: 'assistant', content: acc });
+      botBubble.innerHTML = renderMd(acc); // đổi từ text thô sang bảng/định dạng thật
       botBubble.appendChild(botActions(acc));
       if (wasEmpty) loadConvos(); // cuộc mới -> cập nhật danh sách + tiêu đề
     } else {
@@ -419,6 +420,67 @@ function mdToHtml(md) {
       if (t) html += `<p>${inline(t)}</p>`;
       i++;
     }
+  }
+  return html;
+}
+// Render markdown để HIỂN THỊ trên màn hình (bảng thật + tiêu đề + danh sách), style theo theme qua CSS.
+function mdInline(s) {
+  return esc2(s)
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/\*([^*\n]+?)\*/g, '<i>$1</i>');
+}
+function renderMd(md) {
+  const lines = (md || '').split('\n');
+  let html = '', i = 0;
+  while (i < lines.length) {
+    const t = lines[i].trim();
+    if (!t) { i++; continue; }
+    // Bảng
+    if (t.startsWith('|')) {
+      const rows = [];
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        const cells = lines[i].trim().split('|').slice(1, -1).map((c) => c.trim());
+        if (!cells.every((c) => c === '' || /^:?-{2,}:?$/.test(c))) rows.push(cells);
+        i++;
+      }
+      if (rows.length) {
+        html += '<div class="md-tablewrap"><table class="md-table"><thead><tr>' +
+          rows[0].map((c) => `<th>${mdInline(c)}</th>`).join('') + '</tr></thead><tbody>';
+        for (let r = 1; r < rows.length; r++)
+          html += '<tr>' + rows[r].map((c) => `<td>${mdInline(c)}</td>`).join('') + '</tr>';
+        html += '</tbody></table></div>';
+      }
+      continue;
+    }
+    // Tiêu đề (# -> h3)
+    let m;
+    if ((m = t.match(/^(#{1,4})\s+(.*)$/))) {
+      const lvl = Math.min(m[1].length + 2, 6);
+      html += `<h${lvl} class="md-h">${mdInline(m[2])}</h${lvl}>`;
+      i++; continue;
+    }
+    // Trích dẫn / cảnh báo
+    if (t.startsWith('>')) {
+      const buf = [];
+      while (i < lines.length && lines[i].trim().startsWith('>')) { buf.push(lines[i].trim().replace(/^>\s?/, '')); i++; }
+      html += `<blockquote class="md-quote">${buf.map(mdInline).join('<br>')}</blockquote>`;
+      continue;
+    }
+    // Danh sách
+    if (/^[-*]\s+/.test(t)) {
+      const items = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) { items.push(lines[i].trim().replace(/^[-*]\s+/, '')); i++; }
+      html += '<ul class="md-ul">' + items.map((x) => `<li>${mdInline(x)}</li>`).join('') + '</ul>';
+      continue;
+    }
+    // Đoạn văn (gộp các dòng liền nhau)
+    const buf = [];
+    while (i < lines.length) {
+      const s = lines[i].trim();
+      if (!s || s.startsWith('|') || s.startsWith('>') || /^[-*]\s+/.test(s) || /^#{1,4}\s+/.test(s)) break;
+      buf.push(s); i++;
+    }
+    html += `<p>${buf.map(mdInline).join('<br>')}</p>`;
   }
   return html;
 }
