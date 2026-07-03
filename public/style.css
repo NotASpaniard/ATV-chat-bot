@@ -198,6 +198,20 @@ button, input, textarea, a { font-family: inherit; }
   padding: 10px 4px 2px; border-top: 1px solid var(--border);
 }
 .side-brand .icon-btn { width: 32px; height: 32px; }
+
+/* khối công cụ 2 cột (Quản trị · Theme · Tự học · Trạng thái); thêm nút -> tự xuống hàng */
+.side-tools { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 4px 0 2px; }
+.side-tools .tool-sq {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 46px;
+  background: var(--surface-2); color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 12px;
+  cursor: pointer; text-decoration: none; transition: all var(--transition);
+}
+.side-tools .tool-sq svg { width: 20px; height: 20px; }
+.side-tools .tool-sq:hover { color: var(--text); border-color: var(--accent); background: var(--surface); }
+.side-tools .tool-sq.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
 button.model-tag { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.model-tag:hover { border-color: var(--accent); color: var(--text); }
 
