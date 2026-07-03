@@ -202,20 +202,51 @@ tr:last-child td { border-bottom: none; }
 .modal-body { padding: 16px 20px; overflow-y: auto; }
 
 .data-table-wrap { overflow-x: auto; }
-.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.data-table th, .data-table td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
-.data-table thead th { color: var(--text-muted); font-weight: 600; white-space: nowrap; position: sticky; top: 0; background: var(--surface); }
+.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.data-table th, .data-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.data-table thead th { color: var(--text-muted); font-weight: 600; white-space: nowrap; text-align: left; }
 .data-table tbody tr:hover { background: var(--surface-2); }
-.data-table .cell-name { font-weight: 550; max-width: 240px; overflow-wrap: anywhere; }
-.data-table .cell-detail { max-width: 360px; overflow-wrap: anywhere; }
+.data-table .col-type { text-align: center; white-space: nowrap; width: 1%; }
+.data-table .row-acts { text-align: right; white-space: nowrap; width: 1%; }
+.name-link {
+  background: none; border: none; padding: 0; cursor: pointer; text-align: left;
+  color: var(--text); font-size: 14px; font-weight: 550; font-family: inherit;
+  overflow-wrap: anywhere; transition: color var(--transition);
+}
+.name-link:hover { color: var(--accent-strong); text-decoration: underline; }
 .type-tag { display: inline-block; font-size: 11.5px; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); border: 1px solid var(--border); white-space: nowrap; }
 .type-tag.rec { background: color-mix(in srgb, var(--dot-online) 14%, transparent); }
-.row-acts { white-space: nowrap; text-align: right; }
-.row-acts button {
-  display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center;
+.row-del {
+  display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center;
   border: 1px solid var(--border); background: transparent; color: var(--text-muted);
-  border-radius: 9px; cursor: pointer; margin-left: 6px; transition: all var(--transition);
+  border-radius: 9px; cursor: pointer; transition: all var(--transition);
 }
-.row-acts button svg { width: 16px; height: 16px; }
-.row-acts .row-edit:hover { color: var(--accent-strong); border-color: var(--accent); }
-.row-acts .row-del:hover { color: var(--danger); border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.row-del svg { width: 16px; height: 16px; }
+.row-del:hover { color: var(--danger); border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+
+/* ---- trang chi tiết trong popup ---- */
+.detail-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.detail-back {
+  display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer;
+  font-size: 13.5px; font-family: inherit; transition: all var(--transition);
+}
+.detail-back svg { width: 16px; height: 16px; }
+.detail-back:hover { border-color: var(--accent); }
+.detail-lbl { display: block; font-size: 12.5px; color: var(--text-muted); margin-bottom: 6px; }
+.detail-title-input {
+  width: 100%; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px; padding: 11px 14px;
+  font-size: 15px; font-family: inherit; outline: none; transition: border var(--transition);
+}
+.detail-title-input:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.detail-saved { display: inline-block; font-size: 12.5px; color: var(--dot-online); margin-top: 6px; min-height: 16px; }
+.detail-content { margin-top: 14px; }
+.detail-text {
+  white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: 13.5px;
+  line-height: 1.7; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px; margin: 0; max-height: 52vh; overflow-y: auto;
+}
+.detail-fields { width: 100%; border-collapse: collapse; font-size: 14px; }
+.detail-fields th, .detail-fields td { padding: 9px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.detail-fields th { color: var(--text-muted); font-weight: 600; white-space: nowrap; width: 30%; }

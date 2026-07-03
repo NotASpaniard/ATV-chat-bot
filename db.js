@@ -258,6 +258,16 @@ async function renameDocument(id, title) {
   await pg.query('UPDATE documents SET title=$1 WHERE id=$2', [clean(title), id]);
 }
 
+// Lấy 1 tài liệu kèm nội dung đầy đủ (ghép các đoạn đã tách).
+async function getDocument(id) {
+  const meta = (await pg.query('SELECT id, title, source, created_at FROM documents WHERE id=$1', [id])).rows[0];
+  if (!meta) return null;
+  const chunks = (await pg.query(
+    `SELECT content FROM knowledge WHERE source_type='document' AND source_id=$1 ORDER BY chunk_index`, [id]
+  )).rows;
+  return { ...meta, content: chunks.map((c) => c.content).join('\n\n') };
+}
+
 // ---- Bản ghi LINH HOẠT ----
 // Ghép collection + tất cả trường trong data thành văn bản để tạo embedding (tìm kiếm được).
 function recordToText(collection, data) {
@@ -446,7 +456,7 @@ async function retrieve(queryText, k = 5, includeMemory = false) {
 module.exports = {
   init,
   ensureSession, saveMessage, getMessages, listSessions, deleteSession, saveMemory,
-  addDocument, listDocuments, deleteDocument, renameDocument,
+  addDocument, listDocuments, deleteDocument, renameDocument, getDocument,
   addRecord, addRecordsBulk, listRecords, deleteRecord, renameRecord, reindexRecords,
   retrieve, retrieveRecords, retrieveDevices, embedOk,
   getSetting, setSetting, getRules,

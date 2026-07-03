@@ -233,44 +233,81 @@ function makeUploadCard() {
 
 if (uploadCards) uploadCards.appendChild(makeUploadCard());
 
-// ===== DỮ LIỆU ĐÃ LƯU (popup bảng) =====
+// ===== DỮ LIỆU ĐÃ LƯU (popup: danh sách + trang chi tiết) =====
 const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg>';
-const PENCIL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+const BACK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
 
-function recSummary(r) {
-  const entries = Object.entries(r.data || {});
-  return entries.map(([k, v]) => `${esc(k)}: <b>${esc(v)}</b>`).join(' · ') || '(trống)';
-}
+let savedRecs = [], savedDocs = [];
 
-function rowActions(kind, id, name) {
-  return `<td class="row-acts">
-    <button class="row-edit" title="Sửa tên" data-kind="${kind}" data-id="${id}" data-name="${esc(name)}">${PENCIL_SVG}</button>
-    <button class="row-del" title="Xóa" data-kind="${kind}" data-id="${id}">${TRASH_SVG}</button>
-  </td>`;
-}
-
+// --- Danh sách gọn: Tên | Loại (giữa) | Xóa ---
 async function loadSavedData() {
   const body = document.getElementById('data-modal-body');
   body.innerHTML = 'Đang tải…';
   try {
     const [recs, docs] = await Promise.all([api('/api/records'), api('/api/documents')]);
+    savedRecs = recs; savedDocs = docs;
     document.getElementById('saved-count').textContent = (recs.length + docs.length) || '';
     if (!recs.length && !docs.length) { body.innerHTML = '<div class="empty">Chưa có dữ liệu nào.</div>'; return; }
     const rows = [];
     for (const d of docs) rows.push(`<tr>
-      <td class="cell-name">${esc(d.title)}</td>
-      <td><span class="type-tag">Tài liệu</span></td>
-      <td class="meta cell-detail">${d.chunks} đoạn${d.source ? ' · ' + esc(d.source) : ''}</td>
-      ${rowActions('doc', d.id, d.title)}</tr>`);
+      <td><button class="name-link" data-kind="doc" data-id="${d.id}">${esc(d.title)}</button></td>
+      <td class="col-type"><span class="type-tag">Tài liệu</span></td>
+      <td class="row-acts"><button class="row-del" title="Xóa" data-kind="doc" data-id="${d.id}">${TRASH_SVG}</button></td></tr>`);
     for (const r of recs) rows.push(`<tr>
-      <td class="cell-name">${esc(r.collection || 'chung')}</td>
-      <td><span class="type-tag rec">Bản ghi</span></td>
-      <td class="meta cell-detail">${recSummary(r)}</td>
-      ${rowActions('rec', r.id, r.collection || '')}</tr>`);
+      <td><button class="name-link" data-kind="rec" data-id="${r.id}">${esc(r.collection || 'chung')}</button></td>
+      <td class="col-type"><span class="type-tag rec">Bản ghi</span></td>
+      <td class="row-acts"><button class="row-del" title="Xóa" data-kind="rec" data-id="${r.id}">${TRASH_SVG}</button></td></tr>`);
     body.innerHTML = `<div class="data-table-wrap"><table class="data-table">
-      <thead><tr><th>Tên</th><th>Loại</th><th>Chi tiết</th><th></th></tr></thead>
+      <thead><tr><th>Tên</th><th class="col-type">Loại</th><th></th></tr></thead>
       <tbody>${rows.join('')}</tbody></table></div>`;
   } catch (err) { body.innerHTML = '<div class="empty">Lỗi tải: ' + esc(err.message) + '</div>'; }
+}
+
+// --- Trang chi tiết: nội dung đầy đủ + sửa tên tại chỗ ---
+async function openDetail(kind, id) {
+  const body = document.getElementById('data-modal-body');
+  body.innerHTML = 'Đang tải…';
+  let name = '', contentHtml = '';
+  try {
+    if (kind === 'doc') {
+      const doc = await api('/api/documents/' + id);
+      name = doc.title || '';
+      contentHtml = `<pre class="detail-text">${esc(doc.content || '(trống)')}</pre>`;
+    } else {
+      const r = savedRecs.find((x) => x.id == id);
+      name = (r && r.collection) || 'chung';
+      const fields = Object.entries((r && r.data) || {});
+      contentHtml = fields.length
+        ? `<table class="detail-fields"><tbody>${fields.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</tbody></table>`
+        : '<div class="empty">(Bản ghi trống)</div>';
+    }
+  } catch (err) { body.innerHTML = '<div class="empty">Lỗi tải: ' + esc(err.message) + '</div>'; return; }
+
+  body.innerHTML = `
+    <div class="detail-bar">
+      <button class="detail-back" type="button" title="Quay lại">${BACK_SVG}<span>Quay lại</span></button>
+      <span class="type-tag${kind === 'rec' ? ' rec' : ''}">${kind === 'doc' ? 'Tài liệu' : 'Bản ghi'}</span>
+    </div>
+    <label class="detail-lbl">${kind === 'doc' ? 'Tên tài liệu' : 'Tên nhóm'} (sửa trực tiếp rồi Enter để lưu)</label>
+    <input class="detail-title-input" value="${esc(name)}" data-kind="${kind}" data-id="${id}" />
+    <span class="detail-saved" id="detail-saved"></span>
+    <div class="detail-content">${contentHtml}</div>`;
+
+  const input = body.querySelector('.detail-title-input');
+  const saveName = async () => {
+    const nv = input.value.trim();
+    if (!nv || nv === name) return;
+    const url = (kind === 'doc' ? '/api/documents/' : '/api/records/') + id;
+    const payload = kind === 'doc' ? { title: nv } : { collection: nv };
+    try {
+      await api(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      name = nv;
+      document.getElementById('detail-saved').textContent = 'Đã lưu tên';
+      refreshSavedCount();
+    } catch (err) { document.getElementById('detail-saved').textContent = 'Lỗi: ' + err.message; }
+  };
+  input.addEventListener('change', saveName);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
 }
 
 // Cập nhật số đếm trên thanh (không mở popup)
@@ -281,23 +318,18 @@ async function refreshSavedCount() {
   } catch {}
 }
 
-// Mở/đóng popup + thao tác sửa tên / xóa
+// Mở/đóng popup + điều hướng
 const dataModal = document.getElementById('data-modal');
 document.getElementById('saved-bar').addEventListener('click', () => { dataModal.classList.remove('hidden'); loadSavedData(); });
 document.getElementById('data-close').addEventListener('click', () => dataModal.classList.add('hidden'));
 dataModal.addEventListener('click', (e) => { if (e.target === dataModal) dataModal.classList.add('hidden'); });
 document.getElementById('data-modal-body').addEventListener('click', async (e) => {
-  const edit = e.target.closest('.row-edit');
+  const nameLink = e.target.closest('.name-link');
   const del = e.target.closest('.row-del');
-  if (edit) {
-    const kind = edit.dataset.kind, cur = edit.dataset.name || '';
-    const nv = prompt(kind === 'doc' ? 'Tên tài liệu mới:' : 'Tên nhóm mới:', cur);
-    if (nv == null || !nv.trim() || nv.trim() === cur) return;
-    const url = (kind === 'doc' ? '/api/documents/' : '/api/records/') + edit.dataset.id;
-    const payload = kind === 'doc' ? { title: nv.trim() } : { collection: nv.trim() };
-    try { await api(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); loadSavedData(); }
-    catch (err) { alert('Lỗi sửa tên: ' + err.message); }
-  } else if (del) {
+  const back = e.target.closest('.detail-back');
+  if (back) { loadSavedData(); return; }
+  if (nameLink) { openDetail(nameLink.dataset.kind, nameLink.dataset.id); return; }
+  if (del) {
     if (!confirm('Xóa mục này?')) return;
     const url = (del.dataset.kind === 'doc' ? '/api/documents/' : '/api/records/') + del.dataset.id;
     try { await api(url, { method: 'DELETE' }); loadSavedData(); }

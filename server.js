@@ -522,6 +522,10 @@ const server = http.createServer(async (req, res) => {
       const jobId = startJob((onProgress) => db.addDocument({ title, source, content }, onProgress));
       return sendJson(res, 200, { jobId });
     }
+    if (req.method === 'GET' && p.startsWith('/api/documents/')) {
+      const doc = await db.getDocument(Number(p.split('/')[3]));
+      return doc ? sendJson(res, 200, doc) : sendJson(res, 404, { error: 'Không tìm thấy tài liệu' });
+    }
     if (req.method === 'PUT' && p.startsWith('/api/documents/')) {
       const { title } = await readJson(req);
       if (!title || !title.trim()) return sendJson(res, 400, { error: 'Thiếu tên mới' });
