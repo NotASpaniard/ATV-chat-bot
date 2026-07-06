@@ -148,8 +148,10 @@ async function loadMpList() {
     <div class="mp-item${m.name === active ? ' active' : ''}" data-m="${esc(m.name)}">
       <span class="mp-dot"></span>
       <span class="mp-name">${esc(m.name)}</span>
-      <span class="mp-size">${(m.size / 1073741824).toFixed(1)}GB</span>
-      <button class="mp-del" type="button" data-m="${esc(m.name)}" title="Xóa model">${TRASH_SVG}</button>
+      ${m.cloud
+        ? '<span class="mp-cloud" title="Chạy trên máy chủ Google — KHÔNG được đọc dữ liệu nhạy cảm">Đám mây</span>'
+        : `<span class="mp-size">${(m.size / 1073741824).toFixed(1)}GB</span>
+      <button class="mp-del" type="button" data-m="${esc(m.name)}" title="Xóa model">${TRASH_SVG}</button>`}
     </div>`).join('');
 
   if (catEl) {

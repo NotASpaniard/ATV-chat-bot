@@ -257,6 +257,12 @@ button.model-tag:hover { border-color: var(--accent); color: var(--text); }
 .mp-item.active .mp-dot { background: var(--dot-online); border-color: var(--dot-online); }
 .mp-name { flex: 1; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mp-size { font-size: 12px; color: var(--text-muted); flex: none; }
+.mp-cloud {
+  flex: none; font-size: 10.5px; font-weight: 650; letter-spacing: .02em;
+  padding: 2px 8px; border-radius: 999px;
+  color: var(--accent-strong); background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
 .mp-del { flex: none; width: 28px; height: 28px; border-radius: 7px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; display: grid; place-items: center; }
 .mp-del svg { width: 15px; height: 15px; }
 .mp-del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }

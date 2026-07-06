@@ -90,9 +90,74 @@ function sendJson(res, code, obj) {
 async function activeModel() { return db.getSetting('model', MODEL); }
 
 // Model ĐÁM MÂY (dữ liệu rời máy) -> bị cấm đọc dữ liệu nhạy cảm.
-// Hiện mọi model đều chạy local qua Ollama nên luôn false; khi tích hợp
-// Gemini/GPT... các tên model này sẽ tự kích hoạt hàng rào lọc.
 function isCloudModel(name) { return /^(gemini|gpt-|o[0-9]|claude)/i.test(String(name || '')); }
+
+// ---- Gemini (đám mây, tùy chọn qua GEMINI_API_KEY trong .env) ----
+const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite']; // free tier còn quota
+
+function toGeminiContents(chatMessages) {
+  return chatMessages
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+}
+
+// Stream Gemini về client dạng text/plain (giống streamOllama). Trả về toàn bộ text.
+async function streamGemini(res, model, systemContent, chatMessages, prefix = '') {
+  const upstream = await fetch(`${GEMINI_URL}/${model}:streamGenerateContent?alt=sse&key=${GEMINI_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: systemContent }] },
+      contents: toGeminiContents(chatMessages),
+    }),
+  });
+  if (!upstream.ok) {
+    const detail = await upstream.text().catch(() => '');
+    res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Không gọi được Gemini (' + upstream.status + '). ' +
+      (upstream.status === 429 ? 'Hết hạn mức miễn phí — thử lại sau hoặc đổi về model local.' : detail.slice(0, 300)));
+    return null;
+  }
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' });
+  let buf = '', full = '';
+  if (prefix) { res.write(prefix); full += prefix; }
+  const flush = (line) => {
+    line = line.trim();
+    if (!line.startsWith('data:')) return;
+    try {
+      const o = JSON.parse(line.slice(5));
+      const t = o.candidates && o.candidates[0] && o.candidates[0].content &&
+        o.candidates[0].content.parts && o.candidates[0].content.parts.map((p) => p.text || '').join('');
+      if (t) { res.write(t); full += t; }
+    } catch {}
+  };
+  for await (const chunk of upstream.body) {
+    buf += Buffer.from(chunk).toString('utf8');
+    let idx;
+    while ((idx = buf.indexOf('\n')) >= 0) { flush(buf.slice(0, idx)); buf = buf.slice(idx + 1); }
+  }
+  flush(buf);
+  res.end();
+  return full;
+}
+
+// Gọi Gemini trả JSON (cho tư vấn tối ưu).
+async function geminiJson(model, system, user) {
+  const r = await fetch(`${GEMINI_URL}/${model}:generateContent?key=${GEMINI_KEY}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: user }] }],
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
+    }),
+  });
+  if (!r.ok) throw new Error('Gemini ' + r.status);
+  const j = await r.json();
+  const c = j.candidates && j.candidates[0];
+  return (c && c.content && c.content.parts && c.content.parts.map((p) => p.text || '').join('')) || '';
+}
 
 // Gọi Ollama chat (stream) tới client. Trả về toàn bộ text đã sinh.
 async function streamOllama(res, model, systemContent, chatMessages, prefix = '') {
@@ -220,7 +285,13 @@ async function handleChat(req, res) {
   const rules = await db.getRules().catch(() => '');
   const system = SYSTEM_PROMPT + '\n\nBỘ LUẬT (phải tuân thủ):\n' + rules + ragContext;
 
-  const full = await streamOllama(res, model, system, messages, warnPrefix);
+  let full;
+  if (isCloudModel(model)) {
+    if (!GEMINI_KEY) { return sendText(res, 'Chưa cấu hình GEMINI_API_KEY trong .env — hãy đổi về model local.'); }
+    full = await streamGemini(res, model, system, messages, warnPrefix);
+  } else {
+    full = await streamOllama(res, model, system, messages, warnPrefix);
+  }
   if (full && full.trim()) {
     try { await db.saveMessage(sid, 'assistant', full); } catch (e) { console.error('Lưu trả lời lỗi:', e.message); }
     if (useMemory && lastUser) db.saveMemory(sid, `Hỏi: ${lastUser.content}\nĐáp: ${full}`).catch(() => {});
@@ -279,7 +350,9 @@ async function handleAdvise(req, res) {
   let sel = null;
   for (let attempt = 0; attempt < 2 && !sel; attempt++) {
     try {
-      const raw = await ollamaJson(adviseModel, selSystem, 'Yêu cầu của khách: ' + requirement);
+      const raw = isCloudModel(adviseModel)
+        ? await geminiJson(adviseModel, selSystem, 'Yêu cầu của khách: ' + requirement)
+        : await ollamaJson(adviseModel, selSystem, 'Yêu cầu của khách: ' + requirement);
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.items)) sel = parsed;
     } catch (e) { console.error('Chọn phương án lỗi (lần ' + (attempt + 1) + '):', e.message); }
@@ -452,22 +525,27 @@ const server = http.createServer(async (req, res) => {
     // ---- Quản lý model ----
     if (req.method === 'GET' && p === '/api/models') {
       let models = [];
+      let ollamaErr = null;
       try {
         const r = await fetch(`${OLLAMA}/api/tags`, { signal: AbortSignal.timeout(8000) });
         const d = await r.json();
         models = (d.models || []).map((m) => ({ name: m.name, size: m.size }));
-      } catch (e) { return sendJson(res, 200, { models: [], active: await activeModel(), error: 'Không gọi được Ollama' }); }
-      return sendJson(res, 200, { models, active: await activeModel() });
+      } catch (e) { ollamaErr = 'Không gọi được Ollama'; }
+      // Model đám mây (nếu đã cấu hình key) — luôn "có sẵn", không cần tải
+      if (GEMINI_KEY) for (const g of GEMINI_MODELS) models.push({ name: g, size: 0, cloud: true });
+      return sendJson(res, 200, { models, active: await activeModel(), ...(ollamaErr && !models.length ? { error: ollamaErr } : {}) });
     }
     if (req.method === 'POST' && p === '/api/models/active') {
       const { name } = await readJson(req);
       if (!name) return sendJson(res, 400, { error: 'Thiếu tên model' });
+      if (isCloudModel(name) && !GEMINI_KEY) return sendJson(res, 400, { error: 'Chưa cấu hình GEMINI_API_KEY trong .env' });
       await db.setSetting('model', name);
       return sendJson(res, 200, { ok: true, active: name });
     }
     if (req.method === 'POST' && p === '/api/models/delete') {
       const { name } = await readJson(req);
       if (!name) return sendJson(res, 400, { error: 'Thiếu tên model' });
+      if (isCloudModel(name)) return sendJson(res, 400, { error: 'Model đám mây không cần xóa (tắt bằng cách bỏ GEMINI_API_KEY trong .env)' });
       const r = await fetch(`${OLLAMA}/api/delete`, {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
       });
@@ -476,6 +554,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/models/pull') {
       const { name } = await readJson(req);
       if (!name) return sendJson(res, 400, { error: 'Thiếu tên model' });
+      if (isCloudModel(name)) return sendJson(res, 400, { error: 'Model đám mây không cần tải' });
       const upstream = await fetch(`${OLLAMA}/api/pull`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, stream: true }),
       });
