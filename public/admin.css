@@ -145,14 +145,6 @@ tr:last-child td { border-bottom: none; }
 .data-item .del:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .empty { color: var(--text-muted); font-style: italic; padding: 6px 2px; }
 
-.chat-log {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 12px; margin-top: 10px;
-  max-height: 340px; overflow-y: auto; white-space: pre-wrap; font-size: 13px; line-height: 1.7;
-}
-.chat-log .u { color: var(--accent-strong); }
-.chat-log .a { color: var(--text); }
-
 /* trạng thái hệ thống */
 .stat-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
 .stat-row:last-child { border-bottom: none; }

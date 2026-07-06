@@ -87,7 +87,13 @@ function sendJson(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
-async function activeModel() { return db.getSetting('model', MODEL); }
+// Cache model đang dùng trong RAM (chỉ tiến trình này thay đổi qua /api/models/active
+// nên luôn khớp) — tránh truy vấn DB lặp lại ở mỗi request config/status/chat/...
+let modelCache = null;
+async function activeModel() {
+  if (modelCache == null) modelCache = await db.getSetting('model', MODEL);
+  return modelCache;
+}
 
 // Model ĐÁM MÂY (dữ liệu rời máy) -> bị cấm đọc dữ liệu nhạy cảm.
 function isCloudModel(name) { return /^(gemini|gpt-|o[0-9]|claude)/i.test(String(name || '')); }
@@ -540,6 +546,7 @@ const server = http.createServer(async (req, res) => {
       if (!name) return sendJson(res, 400, { error: 'Thiếu tên model' });
       if (isCloudModel(name) && !GEMINI_KEY) return sendJson(res, 400, { error: 'Chưa cấu hình GEMINI_API_KEY trong .env' });
       await db.setSetting('model', name);
+      modelCache = name; // làm mới cache ngay
       return sendJson(res, 200, { ok: true, active: name });
     }
     if (req.method === 'POST' && p === '/api/models/delete') {
@@ -661,6 +668,19 @@ const server = http.createServer(async (req, res) => {
       const jobId = startJob((onProgress) => db.addRecordsBulk(records, onProgress));
       return sendJson(res, 200, { jobId });
     }
+    // Sửa 1 bản ghi (đổi nhóm và/hoặc các trường) — id ở cuối path
+    if (req.method === 'PUT' && p.startsWith('/api/records/')) {
+      const { collection, data } = await readJson(req);
+      if (collection == null && data == null) return sendJson(res, 400, { error: 'Không có gì để cập nhật' });
+      if (data != null && (typeof data !== 'object' || !Object.keys(data).length))
+        return sendJson(res, 400, { error: 'Cần ít nhất một trường có dữ liệu' });
+      await db.updateRecord(Number(p.split('/')[3]), { collection, data });
+      return sendJson(res, 200, { ok: true });
+    }
+    if (req.method === 'DELETE' && p.startsWith('/api/records/')) {
+      await db.deleteRecord(Number(p.split('/')[3]));
+      return sendJson(res, 200, { ok: true });
+    }
 
     // theo dõi tiến độ job nền
     if (req.method === 'GET' && p.startsWith('/api/jobs/')) {
@@ -699,18 +719,6 @@ const server = http.createServer(async (req, res) => {
       } finally {
         fs.unlink(up.path, () => {});
       }
-    }
-    if (req.method === 'PUT' && p.startsWith('/api/records/')) {
-      const { collection, data } = await readJson(req);
-      if (collection == null && data == null) return sendJson(res, 400, { error: 'Không có gì để cập nhật' });
-      if (data != null && (typeof data !== 'object' || !Object.keys(data).length))
-        return sendJson(res, 400, { error: 'Cần ít nhất một trường có dữ liệu' });
-      await db.updateRecord(Number(p.split('/')[3]), { collection, data });
-      return sendJson(res, 200, { ok: true });
-    }
-    if (req.method === 'DELETE' && p.startsWith('/api/records/')) {
-      await db.deleteRecord(Number(p.split('/')[3]));
-      return sendJson(res, 200, { ok: true });
     }
 
     // file tĩnh

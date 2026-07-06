@@ -7,7 +7,6 @@ document.querySelectorAll('.tab').forEach((btn) => {
     document.querySelectorAll('.tab-content').forEach((c) => c.classList.add('hidden'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
-    if (btn.dataset.tab === 'chat') loadSessions();
     if (btn.dataset.tab === 'config') { loadRules(); refreshTplCount(); }
   });
 });
@@ -447,26 +446,6 @@ document.getElementById('data-modal-body').addEventListener('click', async (e) =
 });
 refreshSavedCount();
 
-// ===== LỊCH SỬ CHAT =====
-async function loadSessions() {
-  const el = document.getElementById('sess-list');
-  try {
-    const sessions = await api('/api/sessions');
-    if (!sessions.length) { el.innerHTML = '<div class="empty">Chưa có phiên chat.</div>'; return; }
-    el.innerHTML = sessions.map((s) => `
-      <div class="data-item" style="flex-direction:column;align-items:stretch">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div>
-            <div>${esc(s.title || '(không tiêu đề)')}</div>
-            <div class="meta">${s.msg_count} tin nhắn${s.last_at ? ' · ' + new Date(s.last_at).toLocaleString('vi-VN') : ''}</div>
-          </div>
-          <button class="del" style="color:var(--accent)" data-sid="${esc(s.id)}">Xem</button>
-        </div>
-        <div class="chat-log hidden" id="log-${esc(s.id)}"></div>
-      </div>`).join('');
-  } catch (err) { el.innerHTML = '<div class="empty">Lỗi tải: ' + esc(err.message) + '</div>'; }
-}
-
 // ===== BỘ LUẬT =====
 const rulesText = document.getElementById('rules-text');
 const rulesStatus = document.getElementById('rules-status');
@@ -558,24 +537,6 @@ document.getElementById('tpl-modal-body').addEventListener('click', async (e) =>
   }
 });
 refreshTplCount();
-
-// ===== xử lý chung: xem / xóa =====
-document.addEventListener('click', async (e) => {
-  const del = e.target.closest('.del');
-  if (!del) return;
-
-  if (del.dataset.sid) {
-    const log = document.getElementById('log-' + del.dataset.sid);
-    if (!log.classList.contains('hidden')) { log.classList.add('hidden'); return; }
-    log.classList.remove('hidden'); log.textContent = 'Đang tải…';
-    try {
-      const msgs = await api('/api/sessions/' + encodeURIComponent(del.dataset.sid));
-      log.innerHTML = msgs.map((m) =>
-        `<div class="${m.role === 'user' ? 'u' : 'a'}"><b>${m.role === 'user' ? 'Người dùng' : 'Bot'}:</b> ${esc(m.content)}</div>`
-      ).join('<br>');
-    } catch (err) { log.textContent = 'Lỗi: ' + err.message; }
-  }
-});
 
 // ===== HƯỚNG DẪN LẦN ĐẦU (tour) cho trang Quản trị =====
 const TOUR_STEPS = [

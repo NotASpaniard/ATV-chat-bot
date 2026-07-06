@@ -184,9 +184,11 @@ function hashId(s) {
 async function saveMemory(sessionId, text) {
   try {
     const vec = await embed('search_document: ' + text);
+    // Bộ nhớ hội thoại LUÔN gắn nhạy cảm=true: nội dung hỏi-đáp có thể chứa
+    // thông tin nội bộ, nên chỉ model chạy trên máy được đọc, cloud không bao giờ thấy.
     await pg.query(
-      `INSERT INTO knowledge (source_type, source_id, chunk_index, content, embedding)
-       VALUES ('memory', $1, 0, $2, $3::vector)`,
+      `INSERT INTO knowledge (source_type, source_id, chunk_index, content, embedding, sensitive)
+       VALUES ('memory', $1, 0, $2, $3::vector, true)`,
       [hashId(sessionId), text, toVectorLiteral(vec)]
     );
   } catch (e) { console.error('Lưu bộ nhớ lỗi:', e.message); }
@@ -387,8 +389,7 @@ async function updateRecord(id, { collection, data }) {
   } catch (e) { console.error('updateRecord re-embed lỗi:', e.message); }
 }
 
-// ---- Tìm kiếm ngữ nghĩa (RAG) ----
-// ---- Cấu hình / bộ luật ----
+// ---- Cấu hình / bộ luật (bảng settings dạng key-value) ----
 async function getSetting(key, fallback = '') {
   const { rows } = await pg.query('SELECT value FROM settings WHERE key = $1', [key]);
   return rows.length ? rows[0].value : fallback;
