@@ -39,7 +39,7 @@ function fileToBase64(file) {
 const manFields = document.getElementById('man-fields');
 const manStatus = document.getElementById('man-status');
 
-function addFieldRow(key = '', val = '') {
+function makeFieldRow(container, key = '', val = '') {
   const row = document.createElement('div');
   row.className = 'field-row';
   row.innerHTML = `
@@ -47,8 +47,9 @@ function addFieldRow(key = '', val = '') {
     <input class="f-val" placeholder="Giá trị" value="${esc(val)}" />
     <button type="button" class="f-del" title="Xóa trường">✕</button>`;
   row.querySelector('.f-del').addEventListener('click', () => row.remove());
-  manFields.appendChild(row);
+  container.appendChild(row);
 }
+function addFieldRow(key = '', val = '') { makeFieldRow(manFields, key, val); }
 // vài trường gợi ý sẵn
 addFieldRow('Tên', '');
 addFieldRow('Đơn giá', '');
@@ -78,6 +79,38 @@ document.getElementById('man-form').addEventListener('submit', async (e) => {
     refreshSavedCount();
   } catch (err) {
     setStatus(manStatus, 'Lỗi: ' + err.message, false);
+  } finally { btn.disabled = false; }
+});
+
+// ===== NHẬP DỮ LIỆU NHẠY CẢM (chỉ model local được đọc) =====
+const senFields = document.getElementById('sen-fields');
+const senStatus = document.getElementById('sen-status');
+makeFieldRow(senFields, 'Tên', '');
+makeFieldRow(senFields, 'Giá trị', '');
+document.getElementById('sen-add').addEventListener('click', () => makeFieldRow(senFields));
+document.getElementById('sen-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = {};
+  senFields.querySelectorAll('.field-row').forEach((r) => {
+    const k = r.querySelector('.f-key').value.trim();
+    const v = r.querySelector('.f-val').value.trim();
+    if (k && v) data[k] = v;
+  });
+  if (!Object.keys(data).length) { setStatus(senStatus, 'Nhập ít nhất một trường có giá trị.', false); return; }
+  const btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true;
+  setStatus(senStatus, 'Đang lưu…', true);
+  try {
+    await api('/api/records', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection: document.getElementById('sen-collection').value.trim(), data, sensitive: true }),
+    });
+    setStatus(senStatus, 'Đã lưu (chỉ model trên máy đọc được).', true);
+    senFields.innerHTML = '';
+    makeFieldRow(senFields, 'Tên', ''); makeFieldRow(senFields, 'Giá trị', '');
+    refreshSavedCount();
+  } catch (err) {
+    setStatus(senStatus, 'Lỗi: ' + err.message, false);
   } finally { btn.disabled = false; }
 });
 
@@ -245,29 +278,44 @@ const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const BACK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
 
 let savedRecs = [], savedDocs = [];
+let listMode = 'normal'; // 'normal' = dữ liệu thường | 'sensitive' = dữ liệu nhạy cảm
 
-// --- Danh sách gọn: Tên | Loại (giữa) | Xóa ---
-async function loadSavedData() {
+// --- Danh sách gọn: Tên | Loại (giữa) | Xóa. Lọc theo chế độ thường/nhạy cảm ---
+async function loadSavedData(mode) {
+  if (mode) listMode = mode;
   const body = document.getElementById('data-modal-body');
+  document.getElementById('data-modal-title').textContent =
+    listMode === 'sensitive' ? 'Dữ liệu nhạy cảm đã lưu' : 'Dữ liệu đã lưu';
   body.innerHTML = 'Đang tải…';
   try {
     const [recs, docs] = await Promise.all([api('/api/records'), api('/api/documents')]);
     savedRecs = recs; savedDocs = docs;
-    document.getElementById('saved-count').textContent = (recs.length + docs.length) || '';
-    if (!recs.length && !docs.length) { body.innerHTML = '<div class="empty">Chưa có dữ liệu nào.</div>'; return; }
+    updateCounts(recs, docs);
+    const showRecs = recs.filter((r) => !!r.sensitive === (listMode === 'sensitive'));
+    const showDocs = listMode === 'sensitive' ? [] : docs; // tài liệu hiện chỉ ở danh sách thường
+    if (!showRecs.length && !showDocs.length) {
+      body.innerHTML = '<div class="empty">' + (listMode === 'sensitive' ? 'Chưa có dữ liệu nhạy cảm nào.' : 'Chưa có dữ liệu nào.') + '</div>';
+      return;
+    }
     const rows = [];
-    for (const d of docs) rows.push(`<tr>
+    for (const d of showDocs) rows.push(`<tr>
       <td><button class="name-link" data-kind="doc" data-id="${d.id}">${esc(d.title)}</button></td>
       <td class="col-type"><span class="type-tag">Tài liệu</span></td>
       <td class="row-acts"><button class="row-del" title="Xóa" data-kind="doc" data-id="${d.id}">${TRASH_SVG}</button></td></tr>`);
-    for (const r of recs) rows.push(`<tr>
+    for (const r of showRecs) rows.push(`<tr>
       <td><button class="name-link" data-kind="rec" data-id="${r.id}">${esc(r.collection || 'chung')}</button></td>
-      <td class="col-type"><span class="type-tag rec">Bản ghi</span></td>
+      <td class="col-type"><span class="type-tag ${r.sensitive ? 'sen' : 'rec'}">${r.sensitive ? 'Nhạy cảm' : 'Bản ghi'}</span></td>
       <td class="row-acts"><button class="row-del" title="Xóa" data-kind="rec" data-id="${r.id}">${TRASH_SVG}</button></td></tr>`);
     body.innerHTML = `<div class="data-table-wrap"><table class="data-table">
       <thead><tr><th>Tên</th><th class="col-type">Loại</th><th></th></tr></thead>
       <tbody>${rows.join('')}</tbody></table></div>`;
   } catch (err) { body.innerHTML = '<div class="empty">Lỗi tải: ' + esc(err.message) + '</div>'; }
+}
+
+function updateCounts(recs, docs) {
+  const sen = recs.filter((r) => r.sensitive).length;
+  document.getElementById('saved-count').textContent = (docs.length + recs.length - sen) || '';
+  document.getElementById('sen-count').textContent = sen || '';
 }
 
 const detailBarHtml = (typeLabel, typeClass) => `
@@ -370,17 +418,18 @@ function openRecDetail(id) {
 
 function openDetail(kind, id) { return kind === 'doc' ? openDocDetail(id) : openRecDetail(id); }
 
-// Cập nhật số đếm trên thanh (không mở popup)
+// Cập nhật số đếm trên 2 thanh (không mở popup)
 async function refreshSavedCount() {
   try {
     const [recs, docs] = await Promise.all([api('/api/records'), api('/api/documents')]);
-    document.getElementById('saved-count').textContent = (recs.length + docs.length) || '';
+    updateCounts(recs, docs);
   } catch {}
 }
 
 // Mở/đóng popup + điều hướng
 const dataModal = document.getElementById('data-modal');
-document.getElementById('saved-bar').addEventListener('click', () => { dataModal.classList.remove('hidden'); loadSavedData(); });
+document.getElementById('saved-bar').addEventListener('click', () => { dataModal.classList.remove('hidden'); loadSavedData('normal'); });
+document.getElementById('sen-bar').addEventListener('click', () => { dataModal.classList.remove('hidden'); loadSavedData('sensitive'); });
 document.getElementById('data-close').addEventListener('click', () => dataModal.classList.add('hidden'));
 dataModal.addEventListener('click', (e) => { if (e.target === dataModal) dataModal.classList.add('hidden'); });
 document.getElementById('data-modal-body').addEventListener('click', async (e) => {

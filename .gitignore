@@ -4,7 +4,7 @@
 
 # ===== DỮ LIỆU NGHIỆP VỤ - TUYỆT ĐỐI KHÔNG ĐẨY LÊN GIT =====
 # pgdata chứa báo giá / hợp đồng / lịch sử chat -> không được rời mạng nội bộ
-pgdata/
+pgdata*/
 *.pgdata
 
 # ===== Phụ thuộc (cài lại bằng npm install) =====

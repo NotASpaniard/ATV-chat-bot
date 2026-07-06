@@ -174,6 +174,13 @@ tr:last-child td { border-bottom: none; }
 }
 .saved-bar .saved-caret { margin-left: auto; color: var(--text-muted); }
 
+/* thanh dữ liệu NHẠY CẢM: tông đỏ nhạt để phân biệt rõ */
+.saved-bar.sensitive { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.saved-bar.sensitive svg:first-child { color: var(--danger); }
+.saved-bar.sensitive:hover { border-color: var(--danger); }
+.saved-bar.sensitive .saved-count { background: var(--danger); }
+.type-tag.sen { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+
 /* ===== Popup (modal) ===== */
 .modal-overlay {
   position: fixed; inset: 0; z-index: 100;

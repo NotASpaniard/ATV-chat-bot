@@ -88,6 +88,11 @@ async function init() {
   } catch (e) {
     console.warn('Bỏ qua index HNSW (vẫn tìm chính xác bằng quét tuần tự):', e.message);
   }
+
+  // Cờ NHẠY CẢM: dữ liệu gắn cờ này chỉ model chạy TRÊN MÁY được đọc;
+  // model đám mây (gemini...) bị lọc ngay ở tầng SQL nên không bao giờ thấy.
+  await pg.query(`ALTER TABLE records ADD COLUMN IF NOT EXISTS sensitive BOOLEAN NOT NULL DEFAULT false`);
+  await pg.query(`ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS sensitive BOOLEAN NOT NULL DEFAULT false`);
 }
 
 // ---- Embedding qua Ollama (local) ----
@@ -301,18 +306,19 @@ function recordToText(collection, data) {
 async function addRecord(r) {
   const collection = clean((r.collection || 'chung').trim()) || 'chung';
   const data = cleanObj(r.data && typeof r.data === 'object' ? r.data : {});
+  const sensitive = !!r.sensitive; // nhạy cảm: chỉ model local được đọc
   // Embedding TRƯỚC: nếu lỗi (vd thiếu model) thì văng ngay, KHÔNG tạo bản ghi mồ côi.
   const text = recordToText(collection, data);
   const vec = await embed('search_document: ' + text);
   const { rows } = await pg.query(
-    `INSERT INTO records (collection, data) VALUES ($1, $2) RETURNING id`,
-    [collection, data]
+    `INSERT INTO records (collection, data, sensitive) VALUES ($1, $2, $3) RETURNING id`,
+    [collection, data, sensitive]
   );
   const id = rows[0].id;
   await pg.query(
-    `INSERT INTO knowledge (source_type, source_id, chunk_index, content, embedding)
-     VALUES ('record', $1, 0, $2, $3::vector)`,
-    [id, text, toVectorLiteral(vec)]
+    `INSERT INTO knowledge (source_type, source_id, chunk_index, content, embedding, sensitive)
+     VALUES ('record', $1, 0, $2, $3::vector, $4)`,
+    [id, text, toVectorLiteral(vec), sensitive]
   );
   return { id };
 }
@@ -423,12 +429,14 @@ async function search(q, limit = 30) {
 }
 
 // ---- Truy hồi riêng bảng giá/thiết bị (cho tính năng tư vấn tối ưu) ----
-async function retrieveRecords(queryText, k = 20) {
+// allowSensitive=false (model đám mây): loại bỏ dữ liệu nhạy cảm ngay trong SQL.
+async function retrieveRecords(queryText, k = 20, allowSensitive = true) {
   let vec;
   try { vec = await embed('search_query: ' + queryText); } catch { return []; }
+  const senFilter = allowSensitive ? '' : 'AND sensitive = false';
   const { rows } = await pg.query(
     `SELECT content, 1 - (embedding <=> $1::vector) AS score
-     FROM knowledge WHERE source_type = 'record'
+     FROM knowledge WHERE source_type = 'record' ${senFilter}
      ORDER BY embedding <=> $1::vector LIMIT $2`,
     [toVectorLiteral(vec), k]
   );
@@ -436,21 +444,22 @@ async function retrieveRecords(queryText, k = 20) {
 }
 
 // Như retrieveRecords nhưng lấy kèm DATA gốc (để server tự tính tiền chính xác).
-async function retrieveDevices(queryText, k = 25) {
+async function retrieveDevices(queryText, k = 25, allowSensitive = true) {
   let vec;
   try { vec = await embed('search_query: ' + queryText); } catch { return []; }
+  const senFilter = allowSensitive ? '' : 'AND k.sensitive = false';
   const { rows } = await pg.query(
     `SELECT r.id, r.collection, r.data, k.content,
             1 - (k.embedding <=> $1::vector) AS score
      FROM knowledge k JOIN records r ON r.id = k.source_id
-     WHERE k.source_type = 'record'
+     WHERE k.source_type = 'record' ${senFilter}
      ORDER BY k.embedding <=> $1::vector LIMIT $2`,
     [toVectorLiteral(vec), k]
   );
   return rows;
 }
 
-async function retrieve(queryText, k = 5, includeMemory = false) {
+async function retrieve(queryText, k = 5, includeMemory = false, allowSensitive = true) {
   let vec;
   try {
     vec = await embed('search_query: ' + queryText);
@@ -459,7 +468,10 @@ async function retrieve(queryText, k = 5, includeMemory = false) {
   }
   // Mặc định KHÔNG lấy bộ nhớ hội thoại (chỉ tài liệu/bản ghi nghiệp vụ).
   // Chỉ khi bật "ghi nhớ xuyên hội thoại" mới gộp cả source_type='memory'.
-  const filter = includeMemory ? '' : "WHERE source_type <> 'memory'";
+  const conds = [];
+  if (!includeMemory) conds.push("source_type <> 'memory'");
+  if (!allowSensitive) conds.push('sensitive = false'); // model đám mây: cấm dữ liệu nhạy cảm
+  const filter = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
   const { rows } = await pg.query(
     `SELECT content, source_type, 1 - (embedding <=> $1::vector) AS score
      FROM knowledge

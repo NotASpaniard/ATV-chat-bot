@@ -89,6 +89,11 @@ function sendJson(res, code, obj) {
 
 async function activeModel() { return db.getSetting('model', MODEL); }
 
+// Model ĐÁM MÂY (dữ liệu rời máy) -> bị cấm đọc dữ liệu nhạy cảm.
+// Hiện mọi model đều chạy local qua Ollama nên luôn false; khi tích hợp
+// Gemini/GPT... các tên model này sẽ tự kích hoạt hàng rào lọc.
+function isCloudModel(name) { return /^(gemini|gpt-|o[0-9]|claude)/i.test(String(name || '')); }
+
 // Gọi Ollama chat (stream) tới client. Trả về toàn bộ text đã sinh.
 async function streamOllama(res, model, systemContent, chatMessages, prefix = '') {
   const payload = {
@@ -188,12 +193,14 @@ async function handleChat(req, res) {
     if (lastUser) await db.saveMessage(sid, 'user', lastUser.content);
   } catch (e) { console.error('Lưu câu hỏi lỗi:', e.message); }
 
+  const model = await activeModel();
+  const allowSensitive = !isCloudModel(model); // model đám mây không được đọc dữ liệu nhạy cảm
   let ragContext = '';
   let warnPrefix = '';
   if (lastUser) {
     try {
       // Lấy nhiều ứng viên rồi chỉ giữ các đoạn liên quan nhất (giúp tài liệu lớn bớt nhiễu)
-      const hits = await db.retrieve(lastUser.content, 12, useMemory);
+      const hits = await db.retrieve(lastUser.content, 12, useMemory, allowSensitive);
       const good = hits.filter((h) => h.score > 0.35).slice(0, 6);
       if (good.length) {
         ragContext =
@@ -213,7 +220,7 @@ async function handleChat(req, res) {
   const rules = await db.getRules().catch(() => '');
   const system = SYSTEM_PROMPT + '\n\nBỘ LUẬT (phải tuân thủ):\n' + rules + ragContext;
 
-  const full = await streamOllama(res, await activeModel(), system, messages, warnPrefix);
+  const full = await streamOllama(res, model, system, messages, warnPrefix);
   if (full && full.trim()) {
     try { await db.saveMessage(sid, 'assistant', full); } catch (e) { console.error('Lưu trả lời lỗi:', e.message); }
     if (useMemory && lastUser) db.saveMemory(sid, `Hỏi: ${lastUser.content}\nĐáp: ${full}`).catch(() => {});
@@ -236,8 +243,10 @@ async function handleAdvise(req, res) {
     await db.saveMessage(sid, 'user', '[Tư vấn tối ưu] ' + requirement);
   } catch {}
 
+  const adviseModel = await activeModel();
+  const allowSensitive = !isCloudModel(adviseModel); // model đám mây không được đọc bảng giá nhạy cảm
   let rows = [];
-  try { rows = await db.retrieveDevices(requirement, 25); } catch (e) { console.error('retrieveDevices lỗi:', e.message); }
+  try { rows = await db.retrieveDevices(requirement, 25, allowSensitive); } catch (e) { console.error('retrieveDevices lỗi:', e.message); }
 
   // Không có dữ liệu: phân biệt "chưa nhập bảng giá" vs "embedding lỗi"
   if (!rows.length) {
@@ -270,7 +279,7 @@ async function handleAdvise(req, res) {
   let sel = null;
   for (let attempt = 0; attempt < 2 && !sel; attempt++) {
     try {
-      const raw = await ollamaJson(await activeModel(), selSystem, 'Yêu cầu của khách: ' + requirement);
+      const raw = await ollamaJson(adviseModel, selSystem, 'Yêu cầu của khách: ' + requirement);
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.items)) sel = parsed;
     } catch (e) { console.error('Chọn phương án lỗi (lần ' + (attempt + 1) + '):', e.message); }
@@ -553,12 +562,12 @@ const server = http.createServer(async (req, res) => {
     // Bản ghi có cấu trúc
     if (req.method === 'GET' && p === '/api/records')
       return sendJson(res, 200, await db.listRecords());
-    // Thêm 1 bản ghi linh hoạt: { collection, data:{trường:giá trị,...} }
+    // Thêm 1 bản ghi linh hoạt: { collection, data:{trường:giá trị,...}, sensitive? }
     if (req.method === 'POST' && p === '/api/records') {
       const r = await readJson(req);
       if (!r.data || typeof r.data !== 'object' || !Object.keys(r.data).length)
         return sendJson(res, 400, { error: 'Cần ít nhất một trường có dữ liệu' });
-      return sendJson(res, 200, await db.addRecord(r));
+      return sendJson(res, 200, await db.addRecord({ ...r, sensitive: !!r.sensitive }));
     }
     // Embedding lại các bản ghi cũ đang thiếu trong knowledge (vd nạp lúc thiếu model)
     if (req.method === 'POST' && p === '/api/records/reindex') {
