@@ -95,8 +95,21 @@
           <svg class="saved-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
 
-        <h3 class="mt">Dữ liệu nhạy cảm</h3>
-        <p class="sub">Thông tin nhập ở đây (hợp đồng, giá vốn, điều khoản riêng…) <b>chỉ model chạy trên máy được đọc</b>. Nếu sau này bật model đám mây (Gemini…), hệ thống tự chặn — các dữ liệu này không bao giờ rời khỏi máy.</p>
+        <h3 class="mt">Trường nhạy cảm (tự động ẩn khỏi đám mây)</h3>
+        <p class="sub">Khai báo <b>tên các cột/trường</b> cần giữ kín (VD: <i>Giá vốn, Chiết khấu, Lợi nhuận</i>). Từ đó, <b>mọi lần nhập tay hoặc tải file</b>, hệ thống <b>tự tách</b> các cột trùng tên sang phần nhạy cảm — model đám mây (Gemini) không bao giờ đọc, còn model trên máy vẫn thấy. Bạn không phải đánh dấu từng file.</p>
+        <div class="chips" id="senf-chips"></div>
+        <div class="sf-add">
+          <input id="senf-input" placeholder="Nhập tên trường rồi Enter (VD: Giá vốn)" />
+          <button type="button" id="senf-add" class="btn-ghost">Thêm</button>
+        </div>
+        <div class="form-actions">
+          <button type="button" id="senf-save" class="btn-primary">Lưu danh sách</button>
+          <button type="button" id="senf-apply" class="btn-ghost" title="Tách cột nhạy cảm khỏi dữ liệu đã nhập/tải trước đó">Áp dụng cho dữ liệu đã có</button>
+          <span class="status" id="senf-status"></span>
+        </div>
+
+        <h3 class="mt">Nhập dữ liệu nhạy cảm riêng</h3>
+        <p class="sub">Nhập trực tiếp thông tin kín (hợp đồng, điều khoản riêng…) — cả bản ghi này <b>chỉ model trên máy đọc được</b>.</p>
         <form id="sen-form">
           <label>Nhóm dữ liệu (tùy chọn)</label>
           <input id="sen-collection" placeholder="VD: Hợp đồng 2026" />

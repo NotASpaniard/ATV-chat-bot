@@ -304,14 +304,49 @@ function recordToText(collection, data) {
   return parts.join(' | ') || collection || '(trống)';
 }
 
-// r = { collection, data: {trường: giá trị, ...} }
-async function addRecord(r) {
-  const collection = clean((r.collection || 'chung').trim()) || 'chung';
-  const data = cleanObj(r.data && typeof r.data === 'object' ? r.data : {});
-  const sensitive = !!r.sensitive; // nhạy cảm: chỉ model local được đọc
-  // Embedding TRƯỚC: nếu lỗi (vd thiếu model) thì văng ngay, KHÔNG tạo bản ghi mồ côi.
+// ---- Danh sách TÊN TRƯỜNG nhạy cảm (do người dùng khai báo) ----
+// Bất kỳ trường nào trùng tên (đã chuẩn hóa) sẽ tự tách ra bản ghi nhạy cảm khi nhập/tải lên.
+const ACCENT_MARKS = new RegExp('[\u0300-\u036f]', 'g');
+function normKey(s) {
+  return String(s || '').normalize('NFD').replace(ACCENT_MARKS, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+let _senFieldsCache = null;
+async function getSensitiveFields() {
+  try { return JSON.parse(await getSetting('sensitive_fields', '[]')) || []; } catch { return []; }
+}
+async function getSensitiveFieldSet() {
+  if (_senFieldsCache) return _senFieldsCache;
+  _senFieldsCache = new Set((await getSensitiveFields()).map(normKey).filter(Boolean));
+  return _senFieldsCache;
+}
+async function setSensitiveFields(arr) {
+  const list = (Array.isArray(arr) ? arr : []).map((x) => String(x || '').trim()).filter(Boolean);
+  await setSetting('sensitive_fields', JSON.stringify(list));
+  _senFieldsCache = null; // làm mới cache
+}
+// Chọn 1 trường định danh (Tên/Mã/...) để kèm vào phần nhạy cảm cho có ngữ cảnh khi tra cứu.
+function findIdentifierKey(obj) {
+  const keys = Object.keys(obj);
+  for (const k of keys) { const n = normKey(k); if (n.includes('ten') || n.includes('name') || n.includes('thiet bi') || n.includes('san pham') || n.startsWith('ma')) return k; }
+  return keys.length ? keys[0] : null;
+}
+// Tách data thành phần thường + phần nhạy cảm theo danh sách tên trường.
+function splitBySensitive(data, senSet) {
+  const normal = {}, sens = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (senSet.has(normKey(k))) sens[k] = v; else normal[k] = v;
+  }
+  if (Object.keys(sens).length) {
+    const idKey = findIdentifierKey(normal);
+    if (idKey != null) sens[idKey] = normal[idKey]; // kèm định danh (không xóa khỏi phần thường)
+  }
+  return { normal, sens };
+}
+
+// Chèn 1 bản ghi + embedding (không tách). Dùng nội bộ.
+async function insertRecordRow(collection, data, sensitive) {
   const text = recordToText(collection, data);
-  const vec = await embed('search_document: ' + text);
+  const vec = await embed('search_document: ' + text); // embed TRƯỚC: lỗi thì văng, không tạo bản ghi mồ côi
   const { rows } = await pg.query(
     `INSERT INTO records (collection, data, sensitive) VALUES ($1, $2, $3) RETURNING id`,
     [collection, data, sensitive]
@@ -323,6 +358,57 @@ async function addRecord(r) {
     [id, text, toVectorLiteral(vec), sensitive]
   );
   return { id };
+}
+
+// r = { collection, data: {trường: giá trị, ...}, sensitive? }
+async function addRecord(r) {
+  const collection = clean((r.collection || 'chung').trim()) || 'chung';
+  const data = cleanObj(r.data && typeof r.data === 'object' ? r.data : {});
+  // Form "nhạy cảm": cả bản ghi nhạy cảm, không cần tách.
+  if (r.sensitive) return insertRecordRow(collection, data, true);
+  // Ngược lại: TỰ TÁCH theo danh sách trường nhạy cảm (nếu có khai báo).
+  const senSet = await getSensitiveFieldSet();
+  if (senSet.size) {
+    const { normal, sens } = splitBySensitive(data, senSet);
+    if (Object.keys(sens).length) {
+      const normId = Object.keys(normal).length ? (await insertRecordRow(collection, normal, false)).id : null;
+      const sensId = (await insertRecordRow(collection, sens, true)).id;
+      return { id: normId || sensId };
+    }
+  }
+  return insertRecordRow(collection, data, false);
+}
+
+// Áp dụng lại danh sách trường nhạy cảm cho DỮ LIỆU ĐÃ CÓ: tách cột nhạy cảm khỏi các bản ghi thường.
+async function reapplySensitive(onProgress) {
+  const senSet = await getSensitiveFieldSet();
+  if (!senSet.size) return { scanned: 0, split: 0 };
+  const { rows } = await pg.query('SELECT id, collection, data FROM records WHERE sensitive = false ORDER BY id');
+  let split = 0;
+  await runPool(rows.length, async (i) => {
+    const row = rows[i];
+    const { normal, sens } = splitBySensitive(row.data, senSet);
+    if (!Object.keys(sens).length) return; // không có trường nhạy cảm -> bỏ qua
+    if (Object.keys(normal).length) {
+      await updateRecordData(row.id, row.collection, normal, false); // giữ phần thường (re-embed)
+      await insertRecordRow(row.collection, sens, true);             // tách phần nhạy cảm ra bản ghi mới
+    } else {
+      await updateRecordData(row.id, row.collection, row.data, true); // cả bản ghi -> nhạy cảm
+    }
+    split++;
+  }, onProgress);
+  return { scanned: rows.length, split };
+}
+
+// Cập nhật data + cờ nhạy cảm của 1 bản ghi và re-embed dòng knowledge tương ứng.
+async function updateRecordData(id, collection, data, sensitive) {
+  await pg.query('UPDATE records SET data=$1, sensitive=$2 WHERE id=$3', [data, sensitive, id]);
+  const text = recordToText(collection, data);
+  const vec = await embed('search_document: ' + text);
+  await pg.query(
+    `UPDATE knowledge SET content=$1, embedding=$2::vector, sensitive=$3 WHERE source_type='record' AND source_id=$4`,
+    [text, toVectorLiteral(vec), sensitive, id]
+  );
 }
 
 // Embedding lại các bản ghi CŨ đang thiếu trong knowledge (vd nạp lúc thiếu model).
@@ -490,6 +576,7 @@ module.exports = {
   addDocument, listDocuments, deleteDocument, renameDocument, getDocument, updateDocumentContent,
   addRecord, addRecordsBulk, listRecords, deleteRecord, updateRecord, reindexRecords,
   retrieve, retrieveRecords, retrieveDevices, embedOk,
+  getSensitiveFields, setSensitiveFields, reapplySensitive,
   getSetting, setSetting, getRules,
   getTemplates, setTemplates, search,
 };

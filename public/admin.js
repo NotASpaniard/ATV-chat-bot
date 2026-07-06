@@ -75,6 +75,48 @@ wireRecordForm({ formId: 'man-form', fieldsId: 'man-fields', statusId: 'man-stat
 wireRecordForm({ formId: 'sen-form', fieldsId: 'sen-fields', statusId: 'sen-status', collectionId: 'sen-collection',
   sensitive: true, seed: ['Tên', 'Giá trị'], okMsg: 'Đã lưu (chỉ model trên máy đọc được).' });
 
+// ===== DANH SÁCH TRƯỜNG NHẠY CẢM (tự ẩn khỏi đám mây) =====
+let senfList = [];
+const senfChips = document.getElementById('senf-chips');
+const senfInput = document.getElementById('senf-input');
+const senfStatus = document.getElementById('senf-status');
+function renderSenfChips() {
+  senfChips.innerHTML = senfList.length
+    ? senfList.map((f, i) => `<span class="tag pick sf-chip">${esc(f)}<button type="button" class="sf-x" data-i="${i}" title="Bỏ">×</button></span>`).join('')
+    : '<span class="empty" style="padding:0">Chưa khai báo trường nào. Mọi cột đang để đám mây đọc được.</span>';
+}
+function addSenf(name) {
+  const v = (name || '').trim();
+  if (!v) return;
+  if (!senfList.some((x) => x.toLowerCase() === v.toLowerCase())) senfList.push(v);
+  renderSenfChips();
+}
+senfInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addSenf(senfInput.value); senfInput.value = ''; } });
+document.getElementById('senf-add').addEventListener('click', () => { addSenf(senfInput.value); senfInput.value = ''; senfInput.focus(); });
+senfChips.addEventListener('click', (e) => { const x = e.target.closest('.sf-x'); if (x) { senfList.splice(+x.dataset.i, 1); renderSenfChips(); } });
+document.getElementById('senf-save').addEventListener('click', async (e) => {
+  const btn = e.target; btn.disabled = true;
+  setStatus(senfStatus, 'Đang lưu…', true);
+  try {
+    await api('/api/sensitive-fields', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: senfList }) });
+    setStatus(senfStatus, 'Đã lưu. Áp dụng ngay cho dữ liệu nhập/tải MỚI. Dữ liệu cũ: bấm "Áp dụng cho dữ liệu đã có".', true);
+  } catch (err) { setStatus(senfStatus, 'Lỗi: ' + err.message, false); }
+  finally { btn.disabled = false; }
+});
+document.getElementById('senf-apply').addEventListener('click', async (e) => {
+  if (!confirm('Tách các cột nhạy cảm khỏi TẤT CẢ dữ liệu đã nhập/tải trước đó? (nên Lưu danh sách trước)')) return;
+  const btn = e.target; btn.disabled = true;
+  setStatus(senfStatus, 'Đang rà soát & tách dữ liệu cũ…', true);
+  try {
+    const { jobId } = await api('/api/records/reapply-sensitive', { method: 'POST' });
+    const r = await pollJob(jobId, (done, total) => setStatus(senfStatus, `Đang xử lý ${done}/${total}…`, true));
+    setStatus(senfStatus, `Xong: quét ${r.scanned} bản ghi, tách ${r.split} bản có trường nhạy cảm.`, true);
+    refreshSavedCount();
+  } catch (err) { setStatus(senfStatus, 'Lỗi: ' + err.message, false); }
+  finally { btn.disabled = false; }
+});
+(async () => { try { senfList = (await api('/api/sensitive-fields')).fields || []; } catch {} renderSenfChips(); })();
+
 // ===== THANH 2: TẢI FILE (nhiều ô độc lập) =====
 const MAX_UPLOAD_MB = 200;
 const uploadCards = document.getElementById('upload-cards');

@@ -582,6 +582,21 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true });
     }
 
+    // Danh sách TÊN TRƯỜNG nhạy cảm (tự ẩn khỏi model đám mây khi nhập/tải lên)
+    if (req.method === 'GET' && p === '/api/sensitive-fields')
+      return sendJson(res, 200, { fields: await db.getSensitiveFields() });
+    if (req.method === 'POST' && p === '/api/sensitive-fields') {
+      const { fields } = await readJson(req);
+      if (!Array.isArray(fields)) return sendJson(res, 400, { error: 'Thiếu danh sách trường' });
+      await db.setSensitiveFields(fields);
+      return sendJson(res, 200, { ok: true });
+    }
+    // Áp dụng danh sách trường nhạy cảm cho dữ liệu ĐÃ CÓ (tách cột nhạy cảm ra) — chạy nền
+    if (req.method === 'POST' && p === '/api/records/reapply-sensitive') {
+      const jobId = startJob((onProgress) => db.reapplySensitive(onProgress));
+      return sendJson(res, 200, { jobId });
+    }
+
     // Mẫu câu lệnh
     if (req.method === 'GET' && p === '/api/templates')
       return sendJson(res, 200, { templates: await db.getTemplates() });
