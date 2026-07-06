@@ -1,4 +1,4 @@
-// Trang quản trị: nhập tay linh hoạt + tải file (Excel/CSV/PDF/Word/TXT) + xem dữ liệu & lịch sử.
+// Trang quản trị: nhập dữ liệu (tay + tải file), xem/sửa dữ liệu đã lưu, bộ luật & mẫu.
 
 // --- chuyển tab ---
 document.querySelectorAll('.tab').forEach((btn) => {
@@ -25,19 +25,7 @@ function setStatus(el, msg, ok) {
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result).split(',')[1]);
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
-}
-
-// ===== THANH 1: NHẬP TAY LINH HOẠT =====
-const manFields = document.getElementById('man-fields');
-const manStatus = document.getElementById('man-status');
-
+// ===== NHẬP TAY LINH HOẠT (dùng chung cho form thường và form nhạy cảm) =====
 function makeFieldRow(container, key = '', val = '') {
   const row = document.createElement('div');
   row.className = 'field-row';
@@ -48,70 +36,44 @@ function makeFieldRow(container, key = '', val = '') {
   row.querySelector('.f-del').addEventListener('click', () => row.remove());
   container.appendChild(row);
 }
-function addFieldRow(key = '', val = '') { makeFieldRow(manFields, key, val); }
-// vài trường gợi ý sẵn
-addFieldRow('Tên', '');
-addFieldRow('Đơn giá', '');
 
-document.getElementById('man-add').addEventListener('click', () => addFieldRow());
-
-document.getElementById('man-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const data = {};
-  manFields.querySelectorAll('.field-row').forEach((r) => {
-    const k = r.querySelector('.f-key').value.trim();
-    const v = r.querySelector('.f-val').value.trim();
-    if (k && v) data[k] = v;
-  });
-  if (!Object.keys(data).length) { setStatus(manStatus, 'Nhập ít nhất một trường có giá trị.', false); return; }
-  const btn = e.target.querySelector('button[type=submit]');
-  btn.disabled = true;
-  setStatus(manStatus, 'Đang lưu…', true);
-  try {
-    await api('/api/records', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ collection: document.getElementById('man-collection').value.trim(), data }),
+// Gom logic của 2 form nhập tay (thường / nhạy cảm) — chỉ khác cờ sensitive + thông báo.
+function wireRecordForm({ formId, fieldsId, statusId, collectionId, sensitive, seed, okMsg }) {
+  const fields = document.getElementById(fieldsId);
+  const statusEl = document.getElementById(statusId);
+  const seedRows = () => { fields.innerHTML = ''; seed.forEach((k) => makeFieldRow(fields, k, '')); };
+  seedRows();
+  document.getElementById(formId.replace('-form', '-add')).addEventListener('click', () => makeFieldRow(fields));
+  document.getElementById(formId).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = {};
+    fields.querySelectorAll('.field-row').forEach((r) => {
+      const k = r.querySelector('.f-key').value.trim();
+      const v = r.querySelector('.f-val').value.trim();
+      if (k && v) data[k] = v;
     });
-    setStatus(manStatus, 'Đã lưu bản ghi.', true);
-    manFields.innerHTML = '';
-    addFieldRow('Tên', ''); addFieldRow('Đơn giá', '');
-    refreshSavedCount();
-  } catch (err) {
-    setStatus(manStatus, 'Lỗi: ' + err.message, false);
-  } finally { btn.disabled = false; }
-});
-
-// ===== NHẬP DỮ LIỆU NHẠY CẢM (chỉ model local được đọc) =====
-const senFields = document.getElementById('sen-fields');
-const senStatus = document.getElementById('sen-status');
-makeFieldRow(senFields, 'Tên', '');
-makeFieldRow(senFields, 'Giá trị', '');
-document.getElementById('sen-add').addEventListener('click', () => makeFieldRow(senFields));
-document.getElementById('sen-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const data = {};
-  senFields.querySelectorAll('.field-row').forEach((r) => {
-    const k = r.querySelector('.f-key').value.trim();
-    const v = r.querySelector('.f-val').value.trim();
-    if (k && v) data[k] = v;
+    if (!Object.keys(data).length) { setStatus(statusEl, 'Nhập ít nhất một trường có giá trị.', false); return; }
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    setStatus(statusEl, 'Đang lưu…', true);
+    try {
+      await api('/api/records', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collection: document.getElementById(collectionId).value.trim(), data, sensitive }),
+      });
+      setStatus(statusEl, okMsg, true);
+      seedRows();
+      refreshSavedCount();
+    } catch (err) {
+      setStatus(statusEl, 'Lỗi: ' + err.message, false);
+    } finally { btn.disabled = false; }
   });
-  if (!Object.keys(data).length) { setStatus(senStatus, 'Nhập ít nhất một trường có giá trị.', false); return; }
-  const btn = e.target.querySelector('button[type=submit]');
-  btn.disabled = true;
-  setStatus(senStatus, 'Đang lưu…', true);
-  try {
-    await api('/api/records', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ collection: document.getElementById('sen-collection').value.trim(), data, sensitive: true }),
-    });
-    setStatus(senStatus, 'Đã lưu (chỉ model trên máy đọc được).', true);
-    senFields.innerHTML = '';
-    makeFieldRow(senFields, 'Tên', ''); makeFieldRow(senFields, 'Giá trị', '');
-    refreshSavedCount();
-  } catch (err) {
-    setStatus(senStatus, 'Lỗi: ' + err.message, false);
-  } finally { btn.disabled = false; }
-});
+}
+
+wireRecordForm({ formId: 'man-form', fieldsId: 'man-fields', statusId: 'man-status', collectionId: 'man-collection',
+  sensitive: false, seed: ['Tên', 'Đơn giá'], okMsg: 'Đã lưu bản ghi.' });
+wireRecordForm({ formId: 'sen-form', fieldsId: 'sen-fields', statusId: 'sen-status', collectionId: 'sen-collection',
+  sensitive: true, seed: ['Tên', 'Giá trị'], okMsg: 'Đã lưu (chỉ model trên máy đọc được).' });
 
 // ===== THANH 2: TẢI FILE (nhiều ô độc lập) =====
 const MAX_UPLOAD_MB = 200;
@@ -538,8 +500,9 @@ document.getElementById('tpl-modal-body').addEventListener('click', async (e) =>
 });
 refreshTplCount();
 
-// ===== HƯỚNG DẪN LẦN ĐẦU (tour) cho trang Quản trị =====
-const TOUR_STEPS = [
+// ===== Hướng dẫn lần đầu (tour) — engine dùng chung ở /tour.js =====
+window.TOUR_KEY = 'avt-tour-admin-done';
+window.TOUR_STEPS = [
   { sel: '.tabs', title: 'Các mục quản trị', text: 'Chuyển giữa "Nhập dữ liệu" và "Bộ luật & Mẫu".' },
   { sel: '#man-form', title: 'Nhập tay', text: 'Tự đặt tên trường (Tên, Đơn giá, Bảo hành…) rồi bấm "Lưu bản ghi". Không bị đóng cứng theo mẫu nào.', tab: 'manual' },
   { sel: '.upload-scroll', title: 'Tải file', text: 'Kéo bảng giá Excel/CSV (mỗi dòng thành 1 bản ghi) hoặc PDF/Word/TXT (đưa vào kho tri thức cho bot).', tab: 'manual' },
@@ -548,67 +511,3 @@ const TOUR_STEPS = [
   { sel: '#tpl-bar', title: 'Mẫu câu lệnh', text: 'Tạo/sửa các mẫu soạn sẵn để chèn nhanh khi chat. Bấm mở danh sách mẫu.', tab: 'config' },
   { sel: '.side-nav', title: 'Điều hướng', text: 'Quay lại trang trò chuyện với bot.' },
 ];
-let tourIdx = 0;
-const tourEl = document.getElementById('tour');
-function showTourStep(i) {
-  const step = TOUR_STEPS[i];
-  if (!step) return endTour();
-  // Chuyển sang đúng tab nếu bước này thuộc tab khác
-  if (step.tab) {
-    const tabBtn = document.querySelector('.tab[data-tab="' + step.tab + '"]');
-    if (tabBtn && !tabBtn.classList.contains('active')) tabBtn.click();
-  }
-  const el = document.querySelector(step.sel);
-  if (!el) { if (i + 1 < TOUR_STEPS.length) return showTourStep(i + 1); return endTour(); }
-  const r = el.getBoundingClientRect();
-  const pad = 6;
-  const hole = document.getElementById('tour-hole');
-  hole.style.left = (r.left - pad) + 'px';
-  hole.style.top = (r.top - pad) + 'px';
-  hole.style.width = (r.width + pad * 2) + 'px';
-  hole.style.height = (r.height + pad * 2) + 'px';
-  document.getElementById('tour-step').textContent = `Bước ${i + 1}/${TOUR_STEPS.length}`;
-  document.getElementById('tour-title').textContent = step.title;
-  document.getElementById('tour-text').textContent = step.text;
-  const box = document.getElementById('tour-box');
-  const arrow = document.getElementById('tour-arrow');
-  box.style.visibility = 'hidden';
-  requestAnimationFrame(() => {
-    const bw = box.offsetWidth, bh = box.offsetHeight;
-    const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
-    let top, dir;
-    if (r.bottom + gap + bh <= vh) { top = r.bottom + gap; dir = 'up'; }
-    else { top = Math.max(12, r.top - gap - bh); dir = 'down'; }
-    let left = r.left + r.width / 2 - bw / 2;
-    left = Math.max(12, Math.min(left, vw - bw - 12));
-    box.style.top = top + 'px';
-    box.style.left = left + 'px';
-    arrow.className = 'tour-arrow ' + dir;
-    arrow.style.left = Math.max(18, Math.min(r.left + r.width / 2 - left, bw - 18)) + 'px';
-    box.style.visibility = 'visible';
-  });
-}
-function endTour() {
-  if (document.getElementById('tour-noshow').checked) localStorage.setItem('avt-tour-admin-done', '1');
-  tourEl.classList.add('hidden');
-  window.removeEventListener('resize', tourResize);
-}
-function tourResize() { showTourStep(tourIdx); }
-function startTour() {
-  tourIdx = 0;
-  tourEl.classList.remove('hidden');
-  showTourStep(0);
-  window.addEventListener('resize', tourResize);
-}
-if (tourEl) {
-  tourEl.addEventListener('click', (e) => {
-    if (e.target.closest('.tour-foot')) return;
-    tourIdx++;
-    if (tourIdx >= TOUR_STEPS.length) endTour();
-    else showTourStep(tourIdx);
-  });
-  document.getElementById('tour-close').addEventListener('click', (e) => { e.stopPropagation(); endTour(); });
-  const helpBtn = document.getElementById('help-btn');
-  if (helpBtn) helpBtn.addEventListener('click', startTour);
-  if (!localStorage.getItem('avt-tour-admin-done')) setTimeout(startTour, 400);
-}
