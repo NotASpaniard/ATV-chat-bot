@@ -25,7 +25,7 @@ Trợ lý AI chạy hoàn toàn trên máy chủ nội bộ doanh nghiệp. Khô
 
 1. Giải nén file zip ra một thư mục.
 2. Bấm đúp `Chatbot.bat`.
-3. Trình duyệt tự mở `http://localhost:3000`.
+3. Trình duyệt tự mở `http://localhost:3007`.
 
 Đã kèm sẵn Node, Ollama và 2 model. Không cần internet.
 
@@ -38,7 +38,7 @@ ollama pull bge-m3
 npm start
 ```
 
-Mở `http://localhost:3000` (chat) và `/admin.html` (nhập liệu, quản trị).
+Mở `http://localhost:3007` (chat) và `/admin.html` (nhập liệu, quản trị).
 
 ## Tự khởi động khi bật máy (tùy chọn)
 
@@ -53,7 +53,7 @@ Sao chép `.env.example` thành `.env` rồi chỉnh nếu cần:
 
 | Biến | Mặc định | Ý nghĩa |
 |---|---|---|
-| `PORT` | 3000 | Cổng web |
+| `PORT` | 3007 | Cổng web |
 | `OLLAMA_URL` | http://localhost:11434 | Địa chỉ Ollama |
 | `MODEL` | qwen2.5:3b | Model trả lời |
 | `EMBED_MODEL` | bge-m3 | Model embedding (đổi phải nạp lại dữ liệu) |

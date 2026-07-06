@@ -10,7 +10,7 @@ const db = require('./db');
 const ExcelJS = require('exceljs');
 const { fileKind, parseSpreadsheet, rowsToRecords, extractText } = require('./parse');
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3007;
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 200) * 1024 * 1024; // giới hạn file tải lên
 
 // ---- công việc nền (index tài liệu/bản ghi) + theo dõi tiến độ ----

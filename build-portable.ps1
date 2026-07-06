@@ -74,7 +74,7 @@ TU KHOI DONG KHI MO MAY (tuy chon, lam 1 lan):
   - Go bo: chuot phai GoTuKhoiDong.bat -> Run as administrator.
 
 CAI THANH APP (tuy chon):
-  - Mo http://localhost:3000 bang Edge/Chrome -> bam nut Install tren thanh dia chi.
+  - Mo http://localhost:3007 bang Edge/Chrome -> bam nut Install tren thanh dia chi.
 
 Du lieu nam trong thu muc 'pgdata' (tu tao lan dau).
 "@

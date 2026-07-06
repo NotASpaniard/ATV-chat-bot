@@ -42,20 +42,28 @@ if (-not (Test-Ollama)) {
 if (Test-Ollama) { Ok "Ollama san sang." } else { Warn "Ollama chua len - chat co the loi." }
 
 # ---------- 2) WEB APP (DB PGlite tu tao, khong can Docker) ----------
-Info "Khoi dong web app..."
+# Cong web: doc tu PORT trong .env neu co, mac dinh 3007 (tranh dung 3000/3006 cua du an khac)
+$port = 3007
+$envFile = Join-Path $root '.env'
+if (Test-Path $envFile) {
+  $m = Select-String -Path $envFile -Pattern '^\s*PORT\s*=\s*(\d+)' -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($m) { $port = [int]$m.Matches[0].Groups[1].Value }
+}
+$appUrl = "http://localhost:$port"
+Info "Khoi dong web app (cong $port)..."
 if ($AUTO) { $node = Start-Process -FilePath $nodeExe -ArgumentList 'server.js' -PassThru -WindowStyle Hidden }
 else       { $node = Start-Process -FilePath $nodeExe -ArgumentList 'server.js' -PassThru -NoNewWindow }
 # cho web thuc su san sang roi moi mo trinh duyet -> mo ra la dung duoc ngay
 $ready = $false
 for ($i = 0; $i -lt 40; $i++) {
   Start-Sleep -Seconds 1
-  try { Invoke-WebRequest 'http://localhost:3000/api/config' -TimeoutSec 3 -UseBasicParsing | Out-Null; $ready = $true; break } catch {}
+  try { Invoke-WebRequest "$appUrl/api/config" -TimeoutSec 3 -UseBasicParsing | Out-Null; $ready = $true; break } catch {}
 }
 if ($ready) {
-  Ok "Web da san sang: http://localhost:3000"
-  if (-not $AUTO) { Start-Process 'http://localhost:3000' }
+  Ok "Web da san sang: $appUrl"
+  if (-not $AUTO) { Start-Process $appUrl }
 } else {
-  Warn "Web chua len sau 40s (co the cong 3000 dang bi chiem, hoac Ollama chua san sang)."
+  Warn "Web chua len sau 40s (co the cong $port dang bi chiem, hoac Ollama chua san sang)."
 }
 Write-Host "------------------------------------------------------------"
 Write-Host "AVT Chat Bot dang chay. DONG cua so nay de TAT." -ForegroundColor Green

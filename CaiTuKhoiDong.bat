@@ -21,7 +21,7 @@ if "%errorlevel%"=="0" (
   echo ============================================================
   echo  THANH CONG! Chatbot se TU CHAY khi may khoi dong.
   echo  Duong dan da dang ky: %~dp0start.ps1
-  echo  Kiem chung: khoi dong lai may, doi ~1 phut, mo http://localhost:3000
+  echo  Kiem chung: khoi dong lai may, doi ~1 phut, mo http://localhost:3007
   echo ============================================================
 ) else (
   echo LOI khi tao task - doc thong bao ben tren.
