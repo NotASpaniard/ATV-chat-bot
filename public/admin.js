@@ -72,8 +72,6 @@ function wireRecordForm({ formId, fieldsId, statusId, collectionId, sensitive, s
 
 wireRecordForm({ formId: 'man-form', fieldsId: 'man-fields', statusId: 'man-status', collectionId: 'man-collection',
   sensitive: false, seed: ['Tên', 'Đơn giá'], okMsg: 'Đã lưu bản ghi.' });
-wireRecordForm({ formId: 'sen-form', fieldsId: 'sen-fields', statusId: 'sen-status', collectionId: 'sen-collection',
-  sensitive: true, seed: ['Tên', 'Giá trị'], okMsg: 'Đã lưu (chỉ model trên máy đọc được).' });
 
 // ===== DANH SÁCH TRƯỜNG NHẠY CẢM (tự ẩn khỏi đám mây) =====
 let senfList = [];
