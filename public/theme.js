@@ -32,6 +32,27 @@
     localStorage.setItem(KEY, t);
     render(t);
     renderLogos(t);
+    applyBg(t);
+  }
+
+  // ----- Ảnh nền + độ mờ RIÊNG cho từng theme (lưu localStorage) -----
+  function bgKey(t) { return 'avt-bg-' + (t || current()); }        // ảnh (dataURL)
+  function bgOpKey(t) { return 'avt-bgop-' + (t || current()); }    // độ mờ 0..100
+  function applyBg(t) {
+    t = t || current();
+    let layer = document.getElementById('app-bg');
+    if (!layer) { layer = document.createElement('div'); layer.id = 'app-bg'; document.body.appendChild(layer); }
+    const url = localStorage.getItem(bgKey(t)) || '';
+    const op = localStorage.getItem(bgOpKey(t));
+    if (url) {
+      layer.style.backgroundImage = 'url("' + url + '")';
+      layer.style.opacity = (op != null ? Number(op) : 35) / 100;
+      document.documentElement.classList.add('has-bg');
+    } else {
+      layer.style.backgroundImage = 'none';
+      layer.style.opacity = 0;
+      document.documentElement.classList.remove('has-bg');
+    }
   }
   function render(t) {
     const btn = document.getElementById('theme-btn');
@@ -64,6 +85,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     render(current());
     renderLogos(current());
+    applyBg(current());
     const btn = document.getElementById('theme-btn');
     if (btn) btn.addEventListener('click', next);
     renderMem();
@@ -71,5 +93,13 @@
     if (mb) mb.addEventListener('click', toggleMem);
   });
 
-  window.AVTTheme = { current, apply, next, animal: () => ANIMALS[current()] || ANIMALS.light };
+  window.AVTTheme = {
+    current, apply, next, applyBg,
+    animal: () => ANIMALS[current()] || ANIMALS.light,
+    // nền theo theme hiện tại (dùng cho popup bánh răng)
+    getBg: () => localStorage.getItem(bgKey()) || '',
+    getBgOpacity: () => { const v = localStorage.getItem(bgOpKey()); return v != null ? Number(v) : 35; },
+    setBg: (dataUrl) => { if (dataUrl) localStorage.setItem(bgKey(), dataUrl); else localStorage.removeItem(bgKey()); applyBg(); },
+    setBgOpacity: (v) => { localStorage.setItem(bgOpKey(), String(v)); applyBg(); },
+  };
 })();

@@ -222,6 +222,17 @@ button, input, textarea, a { font-family: inherit; }
 .side-tools .tool-sq:hover { color: var(--text); border-color: var(--accent); background: var(--surface); }
 .side-tools .tool-sq.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
+/* Ô theme chia đôi: nửa đổi theme | nửa bánh răng (nền + độ mờ) */
+.side-tools .tool-split { padding: 0; overflow: hidden; }
+.side-tools .tool-split .tool-half {
+  flex: 1; height: 100%; display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: var(--text-muted); cursor: pointer;
+  transition: all var(--transition);
+}
+.side-tools .tool-split .tool-half + .tool-half { border-left: 1px solid var(--border); }
+.side-tools .tool-split .tool-half:hover { color: var(--text); background: var(--surface); }
+.side-tools .tool-split .tool-half svg { width: 19px; height: 19px; }
+
 button.model-tag { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.model-tag:hover { border-color: var(--accent); color: var(--text); }
 .help-btn {
@@ -573,3 +584,28 @@ button.model-tag:hover { border-color: var(--accent); color: var(--text); }
 .modal-body .empty { color: var(--text-muted); font-style: italic; }
 .modal-body .bar { height: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; margin-top: 6px; }
 .modal-body .bar-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+
+/* ===== Ảnh nền theo theme (đặt qua nút bánh răng) ===== */
+#app-bg {
+  position: fixed; inset: 0; z-index: 0;
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  pointer-events: none; opacity: 0; transition: opacity .25s ease;
+}
+#shell { position: relative; z-index: 1; }
+/* Khi có nền: để lộ ảnh ở khu chat (bong bóng tin nhắn vẫn đục nên đọc rõ) */
+html.has-bg #main { background: transparent; }
+html.has-bg #messages { background: transparent; }
+
+/* Popup nền + độ mờ (gắn vào nút bánh răng) */
+.bg-panel {
+  position: fixed; z-index: 200; width: 280px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow); padding: 14px;
+}
+.bg-panel .bg-title { font-size: 13px; font-weight: 650; margin-bottom: 10px; }
+.bg-panel .bg-title b { color: var(--accent-strong); }
+.bg-panel label { display: block; font-size: 12px; color: var(--text-muted); margin: 10px 0 5px; }
+.bg-panel input[type=range] { width: 100%; accent-color: var(--accent); }
+.bg-panel .bg-row { display: flex; gap: 8px; }
+.bg-panel .bg-row .btn-ghost, .bg-panel .bg-row .btn-primary { flex: 1; justify-content: center; }
+.bg-file { display: none; }

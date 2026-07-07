@@ -207,6 +207,64 @@ async function mpGet(name) {
   } catch (err) { prog.textContent = 'Lỗi: ' + err.message; if (btn) btn.disabled = false; }
 }
 
+// --- popup NỀN + ĐỘ MỜ (nút bánh răng, nửa phải của ô theme) ---
+const bgBtn = document.getElementById('bg-btn');
+const THEME_LABEL = { light: 'Sáng', dark: 'Tối', coffee: 'Cà phê' };
+function closeBgPanel() { const p = document.getElementById('bg-panel'); if (p) p.remove(); document.removeEventListener('click', closeBgPanel); }
+function downscaleImage(file, maxW, quality) {
+  // Thu nhỏ ảnh trước khi lưu (localStorage giới hạn ~5MB) -> tránh tràn
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxW / img.width);
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => reject(new Error('ảnh không hợp lệ'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+function toggleBgPanel() {
+  if (document.getElementById('bg-panel')) { closeBgPanel(); return; }
+  const T = window.AVTTheme || {};
+  const t = (T.current && T.current()) || 'light';
+  const op = (T.getBgOpacity && T.getBgOpacity()) || 35;
+  const panel = document.createElement('div');
+  panel.id = 'bg-panel'; panel.className = 'bg-panel';
+  panel.innerHTML = `
+    <div class="bg-title">Nền cho giao diện: <b>${esc(THEME_LABEL[t] || t)}</b></div>
+    <div class="bg-row">
+      <button type="button" class="btn-primary bg-pick">Chọn ảnh</button>
+      <button type="button" class="btn-ghost bg-clear">Bỏ nền</button>
+    </div>
+    <label>Độ mờ ảnh nền: <span id="bg-op-val">${op}%</span></label>
+    <input type="range" id="bg-op" min="0" max="100" value="${op}" />
+    <input type="file" class="bg-file" accept="image/*" />`;
+  document.body.appendChild(panel);
+  const r = bgBtn.getBoundingClientRect();
+  panel.style.left = Math.max(10, Math.min(r.left, window.innerWidth - 290)) + 'px';
+  panel.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+  panel.addEventListener('click', (e) => e.stopPropagation());
+  const fileEl = panel.querySelector('.bg-file');
+  panel.querySelector('.bg-pick').addEventListener('click', () => fileEl.click());
+  panel.querySelector('.bg-clear').addEventListener('click', () => T.setBg && T.setBg(''));
+  const opEl = panel.querySelector('#bg-op');
+  opEl.addEventListener('input', () => { document.getElementById('bg-op-val').textContent = opEl.value + '%'; T.setBgOpacity && T.setBgOpacity(opEl.value); });
+  fileEl.addEventListener('change', async () => {
+    const f = fileEl.files[0]; if (!f) return;
+    try {
+      const url = await downscaleImage(f, 1920, 0.82);
+      T.setBg(url);
+    } catch (err) {
+      avtAlert(/quota|exceed/i.test(err.message) ? 'Ảnh quá lớn để lưu. Hãy chọn ảnh nhỏ hơn.' : 'Không đặt được nền: ' + err.message);
+    }
+  });
+  setTimeout(() => document.addEventListener('click', closeBgPanel), 0);
+}
+if (bgBtn) bgBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleBgPanel(); });
+
 // --- cảnh báo tài nguyên ---
 async function checkResources() {
   try {
