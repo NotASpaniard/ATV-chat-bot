@@ -95,22 +95,23 @@
           <svg class="saved-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
 
-        <h3 class="mt">Trường nhạy cảm (tự động ẩn khỏi đám mây)</h3>
-        <p class="sub">Khai báo <b>tên các cột/trường</b> cần giữ kín (VD: <i>Giá vốn, Chiết khấu, Lợi nhuận</i>). Từ đó, <b>mọi lần nhập tay hoặc tải file</b>, hệ thống <b>tự tách</b> các cột trùng tên sang phần nhạy cảm — model đám mây (Gemini) không bao giờ đọc, còn model trên máy vẫn thấy. Bạn không phải đánh dấu từng file.</p>
+        <h3 class="mt">Dữ liệu nhạy cảm — tự động ẩn khỏi đám mây</h3>
+        <p class="sub"><b>Bước 1 — Khai báo tên cột cần giữ kín</b> (VD: <i>Giá vốn, Chiết khấu, Lợi nhuận</i>). Không phân biệt hoa thường hay dấu: <i>Đơn giá = đơn giá = ĐƠN GIÁ</i>. Từ đó mọi lần nhập tay/tải file, hệ thống <b>tự tách</b> các cột trùng tên — Gemini không đọc được, model trên máy vẫn thấy.</p>
         <div class="chips" id="senf-chips"></div>
         <div class="sf-add">
-          <input id="senf-input" placeholder="Nhập tên trường rồi Enter (VD: Giá vốn)" />
+          <input id="senf-input" placeholder="Nhập tên cột rồi Enter (VD: Giá vốn)" />
           <button type="button" id="senf-add" class="btn-ghost">Thêm</button>
         </div>
         <div class="form-actions">
           <button type="button" id="senf-save" class="btn-primary">Lưu danh sách</button>
-          <button type="button" id="senf-apply" class="btn-ghost" title="Tách cột nhạy cảm khỏi dữ liệu đã nhập/tải trước đó">Áp dụng cho dữ liệu đã có</button>
+          <button type="button" id="senf-apply" class="btn-ghost" title="Rà lại toàn bộ dữ liệu đang có, tách các cột nhạy cảm ra khỏi đám mây">Lọc dữ liệu hiện tại</button>
           <span class="status" id="senf-status"></span>
         </div>
 
+        <p class="sub" style="margin-top:18px"><b>Bước 2 — Xem những gì đang bị giấu.</b> Sau khi lọc/tải file, các trường nhạy cảm đã tách nằm ở đây:</p>
         <button type="button" id="sen-bar" class="saved-bar sensitive">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-3 8-7 10-4-2-7-5.6-7-10V6z"/><path d="M12 8v4M12 15.5v.5"/></svg>
-          <span>Dữ liệu nhạy cảm đã lưu</span>
+          <span>Đang giấu khỏi đám mây</span>
           <span class="saved-count" id="sen-count"></span>
           <svg class="saved-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>

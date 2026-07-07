@@ -306,9 +306,10 @@ function recordToText(collection, data) {
 
 // ---- Danh sách TÊN TRƯỜNG nhạy cảm (do người dùng khai báo) ----
 // Bất kỳ trường nào trùng tên (đã chuẩn hóa) sẽ tự tách ra bản ghi nhạy cảm khi nhập/tải lên.
-const ACCENT_MARKS = new RegExp('[\u0300-\u036f]', 'g');
 function normKey(s) {
-  return String(s || '').normalize('NFD').replace(ACCENT_MARKS, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  // Chuẩn hóa để so khớp tên trường: bỏ dấu (p{Diacritic}), "đ"->"d" (NFD không tự chuyển),
+  // hoa->thường, gộp khoảng trắng. Nhờ vậy "Đơn Giá" == "don gia" == "ĐƠN GIÁ".
+  return String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 let _senFieldsCache = null;
 async function getSensitiveFields() {
@@ -380,24 +381,28 @@ async function addRecord(r) {
 }
 
 // Áp dụng lại danh sách trường nhạy cảm cho DỮ LIỆU ĐÃ CÓ: tách cột nhạy cảm khỏi các bản ghi thường.
+// Trả về: scanned (tổng bản ghi thường đã quét), records (số bản ghi có cột nhạy cảm),
+//          fields (tổng số ô/trường nhạy cảm đã tách ra).
 async function reapplySensitive(onProgress) {
   const senSet = await getSensitiveFieldSet();
-  if (!senSet.size) return { scanned: 0, split: 0 };
+  if (!senSet.size) return { scanned: 0, records: 0, fields: 0 };
   const { rows } = await pg.query('SELECT id, collection, data FROM records WHERE sensitive = false ORDER BY id');
-  let split = 0;
+  let records = 0, fields = 0;
   await runPool(rows.length, async (i) => {
     const row = rows[i];
+    // đếm số TRƯỜNG nhạy cảm thật trong bản ghi (không tính trường định danh kèm thêm)
+    const senCount = Object.keys(row.data).filter((k) => senSet.has(normKey(k))).length;
+    if (!senCount) return; // không có trường nhạy cảm -> bỏ qua
     const { normal, sens } = splitBySensitive(row.data, senSet);
-    if (!Object.keys(sens).length) return; // không có trường nhạy cảm -> bỏ qua
     if (Object.keys(normal).length) {
       await updateRecordData(row.id, row.collection, normal, false); // giữ phần thường (re-embed)
       await insertRecordRow(row.collection, sens, true);             // tách phần nhạy cảm ra bản ghi mới
     } else {
       await updateRecordData(row.id, row.collection, row.data, true); // cả bản ghi -> nhạy cảm
     }
-    split++;
+    records++; fields += senCount;
   }, onProgress);
-  return { scanned: rows.length, split };
+  return { scanned: rows.length, records, fields };
 }
 
 // Cập nhật data + cờ nhạy cảm của 1 bản ghi và re-embed dòng knowledge tương ứng.

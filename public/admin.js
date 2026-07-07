@@ -83,10 +83,12 @@ function renderSenfChips() {
     ? senfList.map((f, i) => `<span class="tag pick sf-chip">${esc(f)}<button type="button" class="sf-x" data-i="${i}" title="Bỏ">×</button></span>`).join('')
     : '<span class="empty" style="padding:0">Chưa khai báo trường nào. Mọi cột đang để đám mây đọc được.</span>';
 }
+// Chuẩn hóa để so trùng: bỏ dấu + hoa thường + gộp khoảng trắng (khớp với backend)
+const normField = (s) => String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase().replace(/\s+/g, ' ').trim();
 function addSenf(name) {
   const v = (name || '').trim();
   if (!v) return;
-  if (!senfList.some((x) => x.toLowerCase() === v.toLowerCase())) senfList.push(v);
+  if (!senfList.some((x) => normField(x) === normField(v))) senfList.push(v);
   renderSenfChips();
 }
 senfInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addSenf(senfInput.value); senfInput.value = ''; } });
@@ -102,13 +104,16 @@ document.getElementById('senf-save').addEventListener('click', async (e) => {
   finally { btn.disabled = false; }
 });
 document.getElementById('senf-apply').addEventListener('click', async (e) => {
-  if (!confirm('Tách các cột nhạy cảm khỏi TẤT CẢ dữ liệu đã nhập/tải trước đó? (nên Lưu danh sách trước)')) return;
+  if (!confirm('Rà lại toàn bộ dữ liệu hiện có và tách các cột nhạy cảm ra khỏi đám mây? (nên bấm "Lưu danh sách" trước)')) return;
   const btn = e.target; btn.disabled = true;
-  setStatus(senfStatus, 'Đang rà soát & tách dữ liệu cũ…', true);
+  setStatus(senfStatus, 'Đang rà soát & lọc dữ liệu…', true);
   try {
     const { jobId } = await api('/api/records/reapply-sensitive', { method: 'POST' });
     const r = await pollJob(jobId, (done, total) => setStatus(senfStatus, `Đang xử lý ${done}/${total}…`, true));
-    setStatus(senfStatus, `Xong: quét ${r.scanned} bản ghi, tách ${r.split} bản có trường nhạy cảm.`, true);
+    const msg = r.fields
+      ? `Xong. Đã tách ${r.fields} trường dữ liệu nhạy cảm trong ${r.records}/${r.scanned} bản ghi. Gemini vẫn đọc được các bản ghi này (đã bỏ cột nhạy cảm).`
+      : `Xong. Quét ${r.scanned} bản ghi, không có cột nào trùng danh sách trường nhạy cảm.`;
+    setStatus(senfStatus, msg, true);
     refreshSavedCount();
   } catch (err) { setStatus(senfStatus, 'Lỗi: ' + err.message, false); }
   finally { btn.disabled = false; }
