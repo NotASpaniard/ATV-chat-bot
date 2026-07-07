@@ -248,7 +248,8 @@ function toggleBgPanel() {
   panel.style.bottom = (window.innerHeight - r.top + 8) + 'px';
   panel.addEventListener('click', (e) => e.stopPropagation());
   const fileEl = panel.querySelector('.bg-file');
-  panel.querySelector('.bg-pick').addEventListener('click', () => fileEl.click());
+  // xóa value trước khi mở -> chọn LẠI cùng một ảnh vẫn kích hoạt change
+  panel.querySelector('.bg-pick').addEventListener('click', () => { fileEl.value = ''; fileEl.click(); });
   panel.querySelector('.bg-clear').addEventListener('click', () => T.setBg && T.setBg(''));
   const opEl = panel.querySelector('#bg-op');
   opEl.addEventListener('input', () => { document.getElementById('bg-op-val').textContent = opEl.value + '%'; T.setBgOpacity && T.setBgOpacity(opEl.value); });
