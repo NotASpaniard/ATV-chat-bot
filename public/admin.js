@@ -104,7 +104,7 @@ document.getElementById('senf-save').addEventListener('click', async (e) => {
   finally { btn.disabled = false; }
 });
 document.getElementById('senf-apply').addEventListener('click', async (e) => {
-  if (!confirm('Rà lại toàn bộ dữ liệu hiện có và tách các cột nhạy cảm ra khỏi đám mây? (nên bấm "Lưu danh sách" trước)')) return;
+  if (!(await avtConfirm('Rà lại toàn bộ dữ liệu hiện có và tách các cột nhạy cảm ra khỏi đám mây? (nên bấm "Lưu danh sách" trước)', false))) return;
   const btn = e.target; btn.disabled = true;
   setStatus(senfStatus, 'Đang rà soát & lọc dữ liệu…', true);
   try {
@@ -445,10 +445,10 @@ document.getElementById('data-modal-body').addEventListener('click', async (e) =
   if (back) { loadSavedData(); return; }
   if (nameLink) { openDetail(nameLink.dataset.kind, nameLink.dataset.id); return; }
   if (del) {
-    if (!confirm('Xóa mục này?')) return;
+    if (!(await avtConfirm('Xóa mục này?'))) return;
     const url = (del.dataset.kind === 'doc' ? '/api/documents/' : '/api/records/') + del.dataset.id;
     try { await api(url, { method: 'DELETE' }); loadSavedData(); }
-    catch (err) { alert('Lỗi xóa: ' + err.message); }
+    catch (err) { avtAlert('Lỗi xóa: ' + err.message); }
   }
 });
 refreshSavedCount();
@@ -538,9 +538,9 @@ document.getElementById('tpl-modal-body').addEventListener('click', async (e) =>
   if (add) { tplData.push({ name: '', content: '' }); try { await saveTplArray(); } catch {} openTplDetail(tplData.length - 1); return; }
   if (nameLink) { openTplDetail(+nameLink.dataset.i); return; }
   if (del) {
-    if (!confirm('Xóa mẫu này?')) return;
+    if (!(await avtConfirm('Xóa mẫu này?'))) return;
     tplData.splice(+del.dataset.i, 1);
-    try { await saveTplArray(); renderTplList(); } catch (err) { alert('Lỗi: ' + err.message); }
+    try { await saveTplArray(); renderTplList(); } catch (err) { avtAlert('Lỗi: ' + err.message); }
   }
 });
 refreshTplCount();

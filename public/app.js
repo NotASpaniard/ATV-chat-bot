@@ -172,7 +172,7 @@ async function onMpListClick(e) {
   const item = e.target.closest('.mp-item');
   if (del) {
     e.stopPropagation();
-    if (!confirm('Xóa model ' + del.dataset.m + '? (giải phóng ổ đĩa)')) return;
+    if (!(await avtConfirm('Xóa model ' + del.dataset.m + '? (giải phóng ổ đĩa)'))) return;
     try { await fetch('/api/models/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: del.dataset.m }) }); loadMpList(); } catch {}
     return;
   }
@@ -257,7 +257,7 @@ convoListEl.addEventListener('click', async (e) => {
   const del = e.target.closest('.convo-del');
   if (del) {
     e.stopPropagation();
-    if (!confirm('Xóa cuộc hội thoại này?')) return;
+    if (!(await avtConfirm('Xóa cuộc hội thoại này?'))) return;
     const id = del.dataset.sid;
     try { await fetch('/api/sessions/' + encodeURIComponent(id), { method: 'DELETE' }); } catch {}
     if (id === sessionId) startNewConversation();
@@ -552,7 +552,7 @@ function exportDoc(text) {
 }
 function exportPdf(text) {
   const w = window.open('', '_blank');
-  if (!w) { alert('Trình duyệt chặn cửa sổ in. Cho phép popup rồi thử lại.'); return; }
+  if (!w) { avtAlert('Trình duyệt chặn cửa sổ in. Cho phép popup rồi thử lại.'); return; }
   w.document.write(`<html><head><meta charset="utf-8"><title>ket-qua</title><style>body{font-family:system-ui,Arial;padding:24px;line-height:1.6}table{border-collapse:collapse}th,td{border:1px solid #999;padding:6px}</style></head><body>${mdToHtml(text)}</body></html>`);
   w.document.close(); w.focus();
   setTimeout(() => w.print(), 300);
