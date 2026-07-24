@@ -72,41 +72,64 @@ form label { display: block; font-size: 13.5px; color: var(--text-muted); margin
 }
 .dropzone input[type=file] { color: var(--text-muted); font-size: 13.5px; }
 
-/* o chon file dep hon */
-.up-file, .dropzone input[type=file] {
-  width: 100%; font-size: 14px; color: var(--text-muted);
-  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
-  padding: 11px 14px; cursor: pointer; min-height: 48px;
-  transition: border var(--transition);
+/* ===== Popup tải file: vùng kéo thả + danh sách file ===== */
+.drop-zone {
+  display: block; text-align: center; cursor: pointer; position: relative;
+  border: 1.5px dashed var(--border-strong); border-radius: var(--radius);
+  background: var(--surface-2); padding: 30px 20px;
+  transition: border-color var(--transition), background var(--transition);
 }
-.up-file:hover, .dropzone input[type=file]:hover { border-color: var(--border-strong); }
-.up-file::file-selector-button, .dropzone input[type=file]::file-selector-button {
-  margin-right: 14px; padding: 8px 16px; border-radius: 10px; border: none;
-  background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: 13px; cursor: pointer;
-  transition: background var(--transition);
-}
-.up-file::file-selector-button:hover, .dropzone input[type=file]::file-selector-button:hover { background: var(--accent-strong); }
+.drop-zone:hover, .drop-zone.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.drop-zone > svg { width: 34px; height: 34px; color: var(--accent); }
+.drop-zone .dz-main { margin-top: 10px; font-size: 15px; font-weight: 550; color: var(--text); }
+.drop-zone .dz-sub { margin-top: 5px; font-size: 12.5px; color: var(--text-muted); }
 
-/* khung cuộn bao các ô tải file: không kéo dài vô tận, cuộn lên xuống bên trong */
-.upload-scroll {
-  max-height: 420px; overflow-y: auto;
-  border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--surface); padding: 12px;
+#up-items:not(:empty) { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.up-item {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 11px 14px;
+  transition: border-color var(--transition);
 }
+.up-item.ready:hover { border-color: var(--accent); }
+.up-item.done { border-color: color-mix(in srgb, var(--dot-online) 45%, var(--border)); }
+.up-item.error { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.up-item .up-ico { display: flex; flex: none; color: var(--text-muted); }
+.up-item .up-ico svg { width: 21px; height: 21px; }
+.up-item.done .up-ico { color: var(--dot-online); }
+.up-item.error .up-ico { color: var(--danger); }
+.up-item.ready .up-ico { color: var(--accent); }
+.up-spin { animation: up-rot 1s linear infinite; }
+@keyframes up-rot { to { transform: rotate(360deg); } }
 
-/* nhiều ô upload độc lập */
-#upload-cards { display: flex; flex-direction: column; gap: 12px; }
-.up-card {
-  background: var(--surface-2); border: 1.5px dashed var(--border-strong);
-  border-radius: var(--radius); padding: 16px; transition: border-color var(--transition);
+.up-item .up-open {
+  flex: 1; min-width: 0; display: block; text-align: left;
+  background: none; border: none; padding: 0; font-family: inherit; cursor: pointer;
 }
-.up-card.done { border-style: solid; border-color: color-mix(in srgb, var(--dot-online) 45%, var(--border)); }
-.up-head { display: flex; align-items: center; gap: 12px; }
-.up-head .up-file { flex: 1; min-width: 0; }
-.up-head .up-remove { margin-left: auto; flex: none; }
-.up-head .up-remove:hover { color: var(--danger); border-color: var(--danger); }
-.up-body:not(:empty) { margin-top: 14px; }
-.up-body .up-save { margin-top: 14px; }
+.up-item .up-open:disabled { cursor: default; }
+.up-item .up-name {
+  display: block; font-size: 14.5px; font-weight: 550; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.up-item .up-open:not(:disabled):hover .up-name { color: var(--accent-strong); }
+.up-item .up-sub { display: block; font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
+.up-item.done .up-sub { color: var(--dot-online); }
+.up-item.error .up-sub { color: var(--danger); }
+.up-item .up-size { flex: none; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.up-item .up-x {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 9px;
+  background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+  cursor: pointer; transition: all var(--transition);
+}
+.up-item .up-x svg { width: 15px; height: 15px; }
+.up-item .up-x:hover { color: var(--danger); border-color: var(--danger); }
+
+/* trang sửa nội dung trong popup */
+#up-edit-view .up-title { margin-bottom: 4px; }
+#up-edit-view .up-content { min-height: 340px; font-size: 14px; line-height: 1.65; }
+#up-edit-view .up-chars { margin-top: 6px; font-size: 12.5px; color: var(--text-muted); text-align: right; }
+#up-edit-view .paste-preview table td, #up-edit-view .paste-preview table th { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
 
 .progress { margin-top: 14px; }
 .progress.hidden { display: none; }
@@ -321,10 +344,16 @@ tr:last-child td { border-bottom: none; }
   transition: border var(--transition);
 }
 .modal-panel textarea:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+/* popup nằm ngoài .admin-main nên phải khai báo lại kiểu cho nhãn và ô nhập */
+.modal-panel label { display: block; font-size: 13.5px; color: var(--text-muted); margin: 16px 0 7px; font-weight: 550; }
+.modal-panel input[type=text], .modal-panel input:not([type]) {
+  width: 100%; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+  font-size: 14.5px; font-family: inherit; outline: none;
+  transition: border var(--transition);
+}
+.modal-panel input:not([type]):focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 
-/* ô tải file sau khi xong: thu gọn 1 dòng */
-.up-done-row { display: flex; align-items: center; gap: 12px; }
-.up-check { width: 22px; height: 22px; flex: none; color: var(--dot-online); }
-.up-done-info { flex: 1; min-width: 0; }
-.up-done-name { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.up-done-msg { font-size: 12.5px; color: var(--dot-online); margin-top: 2px; }
+/* thanh Tải file lên: tô nổi vì đây là thao tác chính của trang */
+.saved-bar.primary { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.saved-bar.primary svg:first-child { color: var(--accent); }

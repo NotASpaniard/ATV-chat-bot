@@ -213,18 +213,11 @@ document.getElementById('senf-apply').addEventListener('click', async (e) => {
   finally { btn.disabled = false; }
 });
 (async () => { try { senfList = (await api('/api/sensitive-fields')).fields || []; } catch {} renderSenfChips(); })();
-
-// ===== THANH 2: TẢI FILE (nhiều ô độc lập) =====
+// ===== TẢI FILE LÊN (thanh -> popup: kéo thả -> danh sách -> trang sửa nội dung) =====
 const MAX_UPLOAD_MB = 200;
-const uploadCards = document.getElementById('upload-cards');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// luôn giữ đúng 1 ô trống ở cuối để thêm file mới
-function ensureTrailingEmpty() {
-  const hasEmpty = [...uploadCards.children].some((c) => c.dataset.hasFile !== '1');
-  if (!hasEmpty) uploadCards.appendChild(makeUploadCard());
-}
-
+// Việc chạy nền (embedding) — hỏi tiến độ tới khi xong
 async function pollJob(jobId, onProgress) {
   while (true) {
     const j = await api('/api/jobs/' + jobId);
@@ -234,144 +227,230 @@ async function pollJob(jobId, onProgress) {
   }
 }
 
-// Tạo 1 ô upload độc lập (có preview + nút lưu + tiến độ riêng)
-function makeUploadCard() {
-  const card = document.createElement('div');
-  card.className = 'up-card';
-  card.innerHTML = `
-    <div class="up-head">
-      <input type="file" class="up-file" accept=".xlsx,.xlsm,.csv,.pdf,.docx,.txt,.md" />
-      <span class="up-status status"></span>
-      <button class="up-remove icon-btn hidden" type="button" title="Xóa ô này">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
-      </button>
-    </div>
-    <div class="up-body"></div>
-    <div class="up-progress progress hidden"><div class="bar"><div class="bar-fill"></div></div><span class="ptext"></span></div>`;
+const upModal = document.getElementById('upload-modal');
+const upListView = document.getElementById('up-list-view');
+const upEditView = document.getElementById('up-edit-view');
+const upItemsEl = document.getElementById('up-items');
+const dropZone = document.getElementById('drop-zone');
+const dropInput = document.getElementById('drop-input');
 
-  const fileEl = card.querySelector('.up-file');
-  const removeEl = card.querySelector('.up-remove');
-  const statusEl = card.querySelector('.up-status');
-  const bodyEl = card.querySelector('.up-body');
-  const progEl = card.querySelector('.up-progress');
-  const barEl = card.querySelector('.bar-fill');
-  const ptextEl = card.querySelector('.ptext');
-  let records = null;
+// Mỗi file là một mục trong danh sách; giữ luôn kết quả phân tích để mở ra sửa lại được.
+// state: 'reading' | 'ready' | 'saving' | 'done' | 'error'
+let upItems = [];
+let upSeq = 0;
 
-  removeEl.addEventListener('click', () => { card.remove(); ensureTrailingEmpty(); });
+const fmtSize = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
 
-  const prog = (done, total) => {
-    progEl.classList.remove('hidden');
-    const pct = total ? Math.round((done / total) * 100) : 0;
-    barEl.style.width = pct + '%';
-    ptextEl.textContent = total ? `Đang xử lý: ${done}/${total} (${pct}%)` : 'Đang chuẩn bị…';
-  };
-  const progHide = () => progEl.classList.add('hidden');
-  // Tải xong -> thu gọn ô thành 1 dòng: tên file + đã tải lên thành công
-  const finish = (okMsg) => {
-    const fname = (fileEl.files && fileEl.files[0] && fileEl.files[0].name) || 'File';
-    card.classList.add('done');
-    card.innerHTML = `<div class="up-done-row">
-      <svg class="up-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-      <div class="up-done-info">
-        <div class="up-done-name">${esc(fname)}</div>
-        <div class="up-done-msg">${esc(okMsg || 'Đã tải lên thành công')}</div>
-      </div>
-      <button class="up-remove icon-btn" type="button" title="Xóa khỏi danh sách">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
-      </button></div>`;
-    card.querySelector('.up-remove').addEventListener('click', () => { card.remove(); ensureTrailingEmpty(); });
-    refreshSavedCount();
-  };
+const UP_ICONS = {
+  sheet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10M15 10v10"/></svg>',
+  text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
+  spin: '<svg class="up-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>',
+};
 
-  fileEl.addEventListener('change', async () => {
-    const f = fileEl.files[0];
-    if (!f) return;
-    bodyEl.innerHTML = ''; records = null; progHide();
-    // ô này bắt đầu có file -> hiện nút xóa + đảm bảo còn 1 ô trống bên dưới
-    card.dataset.hasFile = '1';
-    removeEl.classList.remove('hidden');
-    ensureTrailingEmpty();
-    if (f.size > MAX_UPLOAD_MB * 1024 * 1024) {
-      setStatus(statusEl, `File quá lớn (${(f.size / 1048576).toFixed(0)}MB) — tối đa ${MAX_UPLOAD_MB}MB.`, false);
-      return;
-    }
-    setStatus(statusEl, 'Đang tải lên & phân tích…', true);
-    fileEl.disabled = true;
-    try {
-      const res = await api('/api/files/inspect', {
-        method: 'POST', headers: { 'X-Filename': encodeURIComponent(f.name) }, body: f,
-      });
-      if (res.kind === 'spreadsheet') {
-        records = res.records;
-        if (!records.length) { setStatus(statusEl, 'Không tìm thấy dòng dữ liệu.', false); return; }
-        renderSheet(res);
-        setStatus(statusEl, `Đọc được ${res.total} dòng.`, true);
-      } else {
-        renderText(res);
-        setStatus(statusEl, `Đã trích ${res.chars.toLocaleString('vi-VN')} ký tự.`, true);
-      }
-    } catch (err) {
-      setStatus(statusEl, 'Lỗi: ' + err.message, false);
-      fileEl.disabled = false;
-    }
-  });
-
-  function renderSheet(res) {
-    const cols = res.headers;
-    let html = `<div class="chips">Nhóm: <span class="tag">${esc(res.collection)}</span> · `
-      + cols.map((h) => `<span class="tag">${esc(h)}</span>`).join(' ') + `</div>`;
-    html += `<div class="table-wrap"><table><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr>`;
-    for (const r of records.slice(0, 6)) {
-      html += `<tr>${cols.map((c) => `<td>${esc(r.data[(c || '').trim()] || '')}</td>`).join('')}</tr>`;
-    }
-    html += `</table></div><button class="btn-primary up-save" type="button">Nhập ${res.total} bản ghi</button>`;
-    bodyEl.innerHTML = html;
-    bodyEl.querySelector('.up-save').addEventListener('click', saveSheet);
-  }
-  function renderText(res) {
-    bodyEl.innerHTML = `
-      <label>Tiêu đề</label>
-      <input class="up-title" value="${esc(res.title)}" />
-      <label>Nội dung trích được (có thể sửa trước khi lưu)</label>
-      <textarea class="up-content" rows="8"></textarea>
-      <button class="btn-primary up-save" type="button">Lưu vào tri thức</button>`;
-    bodyEl.querySelector('.up-content').value = res.content;
-    bodyEl.querySelector('.up-save').addEventListener('click', saveText);
-  }
-
-  async function saveSheet() {
-    const btn = bodyEl.querySelector('.up-save'); btn.disabled = true;
-    setStatus(statusEl, `Đang nhập ${records.length} bản ghi…`, true);
-    try {
-      const { jobId } = await api('/api/records/import', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ records }),
-      });
-      const result = await pollJob(jobId, prog); progHide();
-      let msg = `Đã tải lên thành công · ${result.imported} bản ghi`;
-      if (result.failed) msg += ` (${result.failed} lỗi)`;
-      finish(msg);
-    } catch (err) { progHide(); setStatus(statusEl, 'Lỗi: ' + err.message, false); btn.disabled = false; }
-  }
-  async function saveText() {
-    const title = bodyEl.querySelector('.up-title').value.trim();
-    const content = bodyEl.querySelector('.up-content').value;
-    if (!title || !content.trim()) { setStatus(statusEl, 'Thiếu tiêu đề hoặc nội dung.', false); return; }
-    const btn = bodyEl.querySelector('.up-save'); btn.disabled = true;
-    setStatus(statusEl, 'Đang lưu & tạo embedding…', true);
-    try {
-      const { jobId } = await api('/api/documents', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, content }),
-      });
-      const result = await pollJob(jobId, prog); progHide();
-      finish(`Đã tải lên thành công · ${(result && result.chunks) || 0} đoạn`);
-    } catch (err) { progHide(); setStatus(statusEl, 'Lỗi: ' + err.message, false); btn.disabled = false; }
-  }
-
-  return card;
+function upIconFor(it) {
+  if (it.state === 'reading' || it.state === 'saving') return UP_ICONS.spin;
+  if (it.state === 'done') return UP_ICONS.check;
+  if (it.state === 'error') return UP_ICONS.warn;
+  return it.kind === 'spreadsheet' ? UP_ICONS.sheet : UP_ICONS.text;
 }
 
-if (uploadCards) uploadCards.appendChild(makeUploadCard());
+// Dòng mô tả dưới tên file — cho biết đang ở bước nào và bấm vào thì được gì
+function upSubFor(it) {
+  if (it.state === 'reading') return 'Đang đọc file…';
+  if (it.state === 'saving') return it.progress || 'Đang lưu…';
+  if (it.state === 'error') return it.error || 'Lỗi';
+  if (it.state === 'done') return it.doneMsg || 'Đã lưu';
+  if (it.kind === 'spreadsheet') return `${it.res.total} dòng · bấm để xem trước rồi nhập`;
+  // đếm trên nội dung hiện tại để số cập nhật ngay sau khi người dùng sửa
+  return `${it.res.content.length.toLocaleString('vi-VN')} ký tự · bấm để sửa nội dung rồi lưu`;
+}
+
+function renderUpItems() {
+  upItemsEl.innerHTML = upItems.map((it) => `
+    <div class="up-item ${it.state}" data-id="${it.id}">
+      <span class="up-ico">${upIconFor(it)}</span>
+      <button type="button" class="up-open" ${it.state === 'ready' ? '' : 'disabled'}>
+        <span class="up-name">${esc(it.name)}</span>
+        <span class="up-sub">${esc(upSubFor(it))}</span>
+      </button>
+      <span class="up-size">${esc(it.size)}</span>
+      <button type="button" class="up-x" title="Bỏ khỏi danh sách">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>`).join('');
+  const n = upItems.filter((i) => i.state === 'done').length;
+  const badge = document.getElementById('upload-count');
+  if (badge) { badge.textContent = n || ''; badge.classList.toggle('hidden', !n); }
+}
+
+const findItem = (id) => upItems.find((i) => String(i.id) === String(id));
+
+// --- Trang 2: xem trước bảng / sửa nội dung văn bản ---
+function openUpEdit(id) {
+  const it = findItem(id);
+  if (!it || it.state !== 'ready') return;
+  upListView.classList.add('hidden');
+  upEditView.classList.remove('hidden');
+  document.getElementById('upload-modal-title').textContent = it.name;
+
+  const backBar = `<div class="detail-bar">
+      <button class="detail-back" type="button" title="Quay lại">${BACK_SVG}<span>Quay lại</span></button>
+      <span class="type-tag">${it.kind === 'spreadsheet' ? 'Bảng dữ liệu' : 'Văn bản'}</span>
+    </div>`;
+
+  if (it.kind === 'spreadsheet') {
+    const cols = it.res.headers;
+    const rows = it.res.records.slice(0, 20).map((r) =>
+      `<tr>${cols.map((c) => `<td>${esc(r.data[(c || '').trim()] || '')}</td>`).join('')}</tr>`).join('');
+    upEditView.innerHTML = backBar + `
+      <p class="sub">Nhóm <b>${esc(it.res.collection)}</b> · ${it.res.total} dòng · ${cols.length} cột${it.res.total > 20 ? ' (xem trước 20 dòng đầu)' : ''}</p>
+      <div class="paste-preview"><div class="pp-scroll"><table>
+        <thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody>
+      </table></div></div>
+      <div class="form-actions">
+        <button type="button" class="btn-primary up-save">Nhập ${it.res.total} bản ghi</button>
+        <span class="status up-edit-status"></span>
+      </div>`;
+  } else {
+    upEditView.innerHTML = backBar + `
+      <label>Tiêu đề</label>
+      <input class="up-title" value="${esc(it.res.title)}" />
+      <label>Nội dung — sửa thoải mái trước khi lưu</label>
+      <textarea class="up-content" rows="16" spellcheck="false"></textarea>
+      <div class="up-chars"></div>
+      <div class="form-actions">
+        <button type="button" class="btn-primary up-save">Lưu vào tri thức</button>
+        <span class="status up-edit-status"></span>
+      </div>`;
+    const ta = upEditView.querySelector('.up-content');
+    ta.value = it.res.content;
+    const chars = upEditView.querySelector('.up-chars');
+    const showChars = () => { chars.textContent = ta.value.length.toLocaleString('vi-VN') + ' ký tự'; };
+    showChars();
+    ta.addEventListener('input', () => {
+      showChars();
+      it.res.content = ta.value;                                   // nhớ bản đã sửa nếu quay ra rồi vào lại
+      it.res.title = upEditView.querySelector('.up-title').value;
+    });
+    upEditView.querySelector('.up-title').addEventListener('input', (e) => { it.res.title = e.target.value; });
+  }
+
+  upEditView.querySelector('.detail-back').addEventListener('click', closeUpEdit);
+  upEditView.querySelector('.up-save').addEventListener('click', () => saveUpItem(it));
+}
+
+function closeUpEdit() {
+  upEditView.classList.add('hidden');
+  upEditView.innerHTML = '';
+  upListView.classList.remove('hidden');
+  document.getElementById('upload-modal-title').textContent = 'Tải file lên';
+}
+
+// --- Đọc file: hỏi server xem là bảng hay văn bản ---
+async function inspectItem(it) {
+  it.state = 'reading'; renderUpItems();
+  try {
+    const res = await api('/api/files/inspect', {
+      method: 'POST', headers: { 'X-Filename': encodeURIComponent(it.name) }, body: it.file,
+    });
+    if (res.kind === 'spreadsheet' && !(res.records || []).length) throw new Error('Không tìm thấy dòng dữ liệu nào');
+    it.res = res; it.kind = res.kind; it.state = 'ready';
+  } catch (err) {
+    it.state = 'error'; it.error = err.message;
+  }
+  renderUpItems();
+}
+
+// --- Lưu: bảng -> bản ghi, văn bản -> kho tri thức ---
+async function saveUpItem(it) {
+  const statusEl = upEditView.querySelector('.up-edit-status');
+  const btn = upEditView.querySelector('.up-save');
+  const isSheet = it.kind === 'spreadsheet';
+  if (!isSheet) {
+    const title = (it.res.title || '').trim();
+    if (!title || !it.res.content.trim()) { setStatus(statusEl, 'Thiếu tiêu đề hoặc nội dung.', false); return; }
+  }
+  btn.disabled = true;
+  it.state = 'saving'; it.progress = 'Đang lưu…'; renderUpItems();
+  const onProg = (done, total) => {
+    it.progress = total ? `Đang lưu ${done}/${total}…` : 'Đang lưu…';
+    renderUpItems();
+    setStatus(statusEl, it.progress, true);
+  };
+  try {
+    let msg;
+    if (isSheet) {
+      const { jobId } = await api('/api/records/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ records: it.res.records }),
+      });
+      const r = await pollJob(jobId, onProg);
+      msg = `Đã nhập ${r.imported} bản ghi` + (r.failed ? ` (${r.failed} lỗi)` : '');
+    } else {
+      const { jobId } = await api('/api/documents', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: it.res.title.trim(), content: it.res.content }),
+      });
+      const r = await pollJob(jobId, onProg);
+      msg = `Đã lưu vào tri thức · ${(r && r.chunks) || 0} đoạn`;
+    }
+    it.state = 'done'; it.doneMsg = msg;
+    renderUpItems(); refreshSavedCount(); closeUpEdit();
+  } catch (err) {
+    it.state = 'ready'; it.error = err.message;
+    renderUpItems();
+    setStatus(statusEl, 'Lỗi: ' + err.message, false);
+    btn.disabled = false;
+  }
+}
+
+// --- Nhận file từ hộp thoại chọn hoặc kéo thả ---
+function addFiles(files) {
+  for (const f of files) {
+    if (f.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      upItems.push({ id: ++upSeq, name: f.name, size: fmtSize(f.size), state: 'error',
+        error: `File quá lớn (${(f.size / 1048576).toFixed(0)}MB) — tối đa ${MAX_UPLOAD_MB}MB` });
+      continue;
+    }
+    const it = { id: ++upSeq, file: f, name: f.name, size: fmtSize(f.size), state: 'reading' };
+    upItems.push(it);
+    inspectItem(it);
+  }
+  renderUpItems();
+}
+
+if (dropInput) {
+  dropInput.addEventListener('change', () => { addFiles([...dropInput.files]); dropInput.value = ''; });
+  ['dragenter', 'dragover'].forEach((ev) => dropZone.addEventListener(ev, (e) => {
+    e.preventDefault(); dropZone.classList.add('over');
+  }));
+  ['dragleave', 'drop'].forEach((ev) => dropZone.addEventListener(ev, (e) => {
+    e.preventDefault(); dropZone.classList.remove('over');
+  }));
+  dropZone.addEventListener('drop', (e) => { if (e.dataTransfer) addFiles([...e.dataTransfer.files]); });
+
+  upItemsEl.addEventListener('click', (e) => {
+    const row = e.target.closest('.up-item');
+    if (!row) return;
+    if (e.target.closest('.up-x')) {
+      upItems = upItems.filter((i) => String(i.id) !== row.dataset.id);
+      renderUpItems();
+      return;
+    }
+    if (e.target.closest('.up-open')) openUpEdit(row.dataset.id);
+  });
+
+  document.getElementById('upload-bar').addEventListener('click', () => {
+    upModal.classList.remove('hidden');
+    closeUpEdit();
+    renderUpItems();
+  });
+  const hideUp = () => { upModal.classList.add('hidden'); closeUpEdit(); };
+  document.getElementById('upload-close').addEventListener('click', hideUp);
+  upModal.addEventListener('click', (e) => { if (e.target === upModal) hideUp(); });
+}
 
 // ===== DỮ LIỆU ĐÃ LƯU (popup: danh sách + trang chi tiết) =====
 const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg>';
@@ -643,7 +722,7 @@ refreshTplCount();
 window.TOUR_KEY = 'avt-tour-admin-done';
 window.TOUR_STEPS = [
   { sel: '.tabs', title: 'Các mục quản trị', text: 'Chuyển giữa "Nhập dữ liệu" và "Bộ luật & Mẫu".' },
-  { sel: '.upload-scroll', title: 'Tải file', text: 'Cách nhanh nhất: kéo bảng giá Excel/CSV (mỗi dòng thành 1 bản ghi) hoặc PDF/Word/TXT (đưa vào kho tri thức cho bot).', tab: 'manual' },
+  { sel: '#upload-bar', title: 'Tải file', text: 'Cách nhanh nhất. Bấm để mở, kéo thả Excel/CSV (mỗi dòng thành 1 bản ghi) hoặc PDF/Word/TXT (vào kho tri thức). Bấm vào tên file để xem trước và sửa nội dung trước khi lưu.', tab: 'manual' },
   { sel: '#fold-manual', title: 'Nhập tay', text: 'Khi không có sẵn file. Bấm mở, dán thẳng bảng từ Excel hoặc gõ "Tên trường: giá trị" — hệ thống tự tách trường, không phải điền từng ô.', tab: 'manual' },
   { sel: '#saved-bar', title: 'Dữ liệu đã lưu', text: 'Bấm để mở bảng: xem chi tiết, sửa tên/nội dung, hoặc xóa từng mục.', tab: 'manual' },
   { sel: '#fold-sensitive', title: 'Trường nhạy cảm', text: 'Khai báo một lần các cột cần giữ kín (VD: Giá vốn). Từ đó mọi file tải lên đều tự tách cột đó khỏi model đám mây.', tab: 'manual' },

@@ -61,14 +61,16 @@
 
       <!-- NHẬP DỮ LIỆU: tải file (chính) -> nhập tay (gấp) -> dữ liệu đã lưu -> trường nhạy cảm (gấp) -->
       <section class="panel-box tab-content" id="tab-manual">
-        <h3>Tải file lên</h3>
+        <h3>Nạp dữ liệu cho bot</h3>
         <p class="sub">
           <b>Excel/CSV</b> → mỗi dòng thành một bản ghi. &nbsp;<b>PDF/Word/TXT</b> → nội dung vào kho tri thức cho bot.
-          Tối đa <b>200MB</b> mỗi file, chọn được nhiều file cùng lúc.
         </p>
-        <div class="upload-scroll">
-          <div id="upload-cards"></div>
-        </div>
+        <button type="button" id="upload-bar" class="saved-bar primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 9l5-5 5 5"/><path d="M12 4v12"/></svg>
+          <span>Tải file lên</span>
+          <span class="saved-count" id="upload-count"></span>
+          <svg class="saved-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
 
         <!-- Nhập tay: gấp lại vì phần lớn dữ liệu vào bằng file -->
         <details class="fold" id="fold-manual">
@@ -167,6 +169,32 @@
 
     </div>
     </main>
+  </div>
+
+  <!-- POPUP: tải file lên (kéo thả -> danh sách -> trang sửa nội dung) -->
+  <div id="upload-modal" class="modal-overlay hidden">
+    <div class="modal-panel">
+      <div class="modal-head">
+        <h3 id="upload-modal-title">Tải file lên</h3>
+        <button type="button" id="upload-close" class="modal-close" title="Đóng">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <!-- Trang 1: chọn file + danh sách file đang xử lý -->
+        <div id="up-list-view">
+          <label class="drop-zone" id="drop-zone">
+            <input type="file" id="drop-input" multiple accept=".xlsx,.xlsm,.csv,.pdf,.docx,.txt,.md" />
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 9l5-5 5 5"/><path d="M12 4v12"/></svg>
+            <div class="dz-main">Kéo thả file vào đây, hoặc <b>bấm để chọn</b></div>
+            <div class="dz-sub">Excel, CSV, PDF, Word, TXT, Markdown · tối đa 200MB mỗi file · chọn được nhiều file</div>
+          </label>
+          <div id="up-items"></div>
+        </div>
+        <!-- Trang 2: xem trước / sửa nội dung trước khi lưu -->
+        <div id="up-edit-view" class="hidden"></div>
+      </div>
+    </div>
   </div>
 
   <!-- POPUP: dữ liệu đã lưu -->
