@@ -37,41 +37,132 @@ function makeFieldRow(container, key = '', val = '') {
   container.appendChild(row);
 }
 
-// Gom logic của 2 form nhập tay (thường / nhạy cảm) — chỉ khác cờ sensitive + thông báo.
-function wireRecordForm({ formId, fieldsId, statusId, collectionId, sensitive, seed, okMsg }) {
-  const fields = document.getElementById(fieldsId);
-  const statusEl = document.getElementById(statusId);
-  const seedRows = () => { fields.innerHTML = ''; seed.forEach((k) => makeFieldRow(fields, k, '')); };
+// ===== NHẬP TAY: 2 chế độ — "Dán nhanh" (mặc định) và "Gõ từng trường" =====
+
+// Tách văn bản dán vào thành danh sách bản ghi. Nhận 2 kiểu:
+//  A. Bảng dán từ Excel: dòng đầu là tên cột, các dòng sau là dữ liệu, ngăn bằng Tab -> nhiều bản ghi.
+//  B. Mỗi dòng "Tên trường: giá trị" -> gộp thành MỘT bản ghi (cho phép ngăn bằng "|" trên cùng dòng).
+function parsePasted(text) {
+  const raw = String(text || '').split(/\r?\n/);
+  const lines = [];
+  for (const r of raw) {
+    const t = r.trim();
+    if (!t) continue;
+    // "Tên: X | Đơn giá: Y" -> tách thành nhiều dòng cho dễ đọc
+    if (!t.includes('\t') && t.includes('|') && t.includes(':')) {
+      t.split('|').map((s) => s.trim()).filter(Boolean).forEach((s) => lines.push(s));
+    } else lines.push(t);
+  }
+  if (!lines.length) return [];
+
+  if (lines.some((l) => l.includes('\t'))) {           // kiểu A: bảng
+    const headers = lines[0].split('\t').map((s) => s.trim());
+    const out = [];
+    for (const line of lines.slice(1)) {
+      const cells = line.split('\t');
+      const data = {};
+      headers.forEach((h, i) => { const v = (cells[i] || '').trim(); if (h && v) data[h] = v; });
+      if (Object.keys(data).length) out.push(data);
+    }
+    return out;
+  }
+
+  const data = {};                                      // kiểu B: từng dòng khóa: giá trị
+  for (const line of lines) {
+    const m = line.match(/^(.{1,60}?)\s*[:=]\s*(.+)$/);
+    if (m) { const k = m[1].trim(); const v = m[2].trim(); if (k && v) data[k] = v; }
+  }
+  return Object.keys(data).length ? [data] : [];
+}
+
+function wireManualEntry() {
+  const form = document.getElementById('man-form');
+  const statusEl = document.getElementById('man-status');
+  const fields = document.getElementById('man-fields');
+  const pasteEl = document.getElementById('man-paste');
+  const previewEl = document.getElementById('man-preview');
+  const pasteWrap = document.getElementById('man-paste-wrap');
+  const fieldsWrap = document.getElementById('man-fields-wrap');
+  const submitBtn = document.getElementById('man-submit');
+  let mode = 'paste';
+
+  const seedRows = () => { fields.innerHTML = ''; ['Tên', 'Đơn giá'].forEach((k) => makeFieldRow(fields, k, '')); };
   seedRows();
-  document.getElementById(formId.replace('-form', '-add')).addEventListener('click', () => makeFieldRow(fields));
-  document.getElementById(formId).addEventListener('submit', async (e) => {
+  document.getElementById('man-add').addEventListener('click', () => makeFieldRow(fields));
+
+  // Xem trước ngay khi gõ/dán: người dùng thấy hệ thống hiểu đúng chưa trước khi lưu
+  function renderPreview() {
+    const recs = parsePasted(pasteEl.value);
+    if (!recs.length) { previewEl.innerHTML = ''; submitBtn.textContent = 'Lưu bản ghi'; return; }
+    const keys = [...new Set(recs.flatMap((r) => Object.keys(r)))];
+    const head = keys.map((k) => `<th>${esc(k)}</th>`).join('');
+    const body = recs.slice(0, 5).map((r) =>
+      `<tr>${keys.map((k) => `<td>${esc(r[k] || '')}</td>`).join('')}</tr>`).join('');
+    previewEl.innerHTML =
+      `<div class="pp-head">Nhận ra <b>${recs.length}</b> bản ghi, <b>${keys.length}</b> trường` +
+      (recs.length > 5 ? ' (xem trước 5 dòng đầu)' : '') + '</div>' +
+      `<div class="pp-scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    submitBtn.textContent = recs.length > 1 ? `Lưu ${recs.length} bản ghi` : 'Lưu bản ghi';
+  }
+  pasteEl.addEventListener('input', renderPreview);
+
+  document.getElementById('man-mode').addEventListener('click', (e) => {
+    const btn = e.target.closest('.seg-btn');
+    if (!btn) return;
+    mode = btn.dataset.mode;
+    document.querySelectorAll('#man-mode .seg-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    pasteWrap.classList.toggle('hidden', mode !== 'paste');
+    fieldsWrap.classList.toggle('hidden', mode !== 'fields');
+    submitBtn.textContent = 'Lưu bản ghi';
+    if (mode === 'paste') renderPreview();
+  });
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const data = {};
-    fields.querySelectorAll('.field-row').forEach((r) => {
-      const k = r.querySelector('.f-key').value.trim();
-      const v = r.querySelector('.f-val').value.trim();
-      if (k && v) data[k] = v;
-    });
-    if (!Object.keys(data).length) { setStatus(statusEl, 'Nhập ít nhất một trường có giá trị.', false); return; }
-    const btn = e.target.querySelector('button[type=submit]');
-    btn.disabled = true;
+    const collection = document.getElementById('man-collection').value.trim();
+    let records;
+    if (mode === 'paste') {
+      records = parsePasted(pasteEl.value);
+      if (!records.length) {
+        setStatus(statusEl, 'Chưa tách được trường nào. Dán bảng từ Excel hoặc gõ "Tên trường: giá trị".', false);
+        return;
+      }
+    } else {
+      const data = {};
+      fields.querySelectorAll('.field-row').forEach((r) => {
+        const k = r.querySelector('.f-key').value.trim();
+        const v = r.querySelector('.f-val').value.trim();
+        if (k && v) data[k] = v;
+      });
+      if (!Object.keys(data).length) { setStatus(statusEl, 'Nhập ít nhất một trường có giá trị.', false); return; }
+      records = [data];
+    }
+
+    submitBtn.disabled = true;
     setStatus(statusEl, 'Đang lưu…', true);
     try {
-      await api('/api/records', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collection: document.getElementById(collectionId).value.trim(), data, sensitive }),
-      });
-      setStatus(statusEl, okMsg, true);
-      seedRows();
+      if (records.length === 1) {
+        await api('/api/records', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ collection, data: records[0], sensitive: false }),
+        });
+      } else {
+        // Nhiều bản ghi -> chạy nền qua job (embedding từng bản ghi mất thời gian)
+        const { jobId } = await api('/api/records/import', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ records: records.map((data) => ({ collection, data })) }),
+        });
+        await pollJob(jobId, (done, total) => setStatus(statusEl, `Đang lưu ${done}/${total}…`, true));
+      }
+      setStatus(statusEl, `Đã lưu ${records.length} bản ghi.`, true);
+      if (mode === 'paste') { pasteEl.value = ''; renderPreview(); } else seedRows();
       refreshSavedCount();
     } catch (err) {
       setStatus(statusEl, 'Lỗi: ' + err.message, false);
-    } finally { btn.disabled = false; }
+    } finally { submitBtn.disabled = false; }
   });
 }
-
-wireRecordForm({ formId: 'man-form', fieldsId: 'man-fields', statusId: 'man-status', collectionId: 'man-collection',
-  sensitive: false, seed: ['Tên', 'Đơn giá'], okMsg: 'Đã lưu bản ghi.' });
+wireManualEntry();
 
 // ===== DANH SÁCH TRƯỜNG NHẠY CẢM (tự ẩn khỏi đám mây) =====
 let senfList = [];
@@ -82,6 +173,9 @@ function renderSenfChips() {
   senfChips.innerHTML = senfList.length
     ? senfList.map((f, i) => `<span class="tag pick sf-chip">${esc(f)}<button type="button" class="sf-x" data-i="${i}" title="Bỏ">×</button></span>`).join('')
     : '<span class="empty" style="padding:0">Chưa khai báo trường nào. Mọi cột đang để đám mây đọc được.</span>';
+  // Số trường hiện ngay trên thanh gấp để biết mà không cần mở ra
+  const cnt = document.getElementById('senf-count');
+  if (cnt) { cnt.textContent = senfList.length || ''; cnt.classList.toggle('hidden', !senfList.length); }
 }
 // Chuẩn hóa để so trùng: bỏ dấu + hoa thường + gộp khoảng trắng (khớp với backend)
 const normField = (s) => String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -549,9 +643,10 @@ refreshTplCount();
 window.TOUR_KEY = 'avt-tour-admin-done';
 window.TOUR_STEPS = [
   { sel: '.tabs', title: 'Các mục quản trị', text: 'Chuyển giữa "Nhập dữ liệu" và "Bộ luật & Mẫu".' },
-  { sel: '#man-form', title: 'Nhập tay', text: 'Tự đặt tên trường (Tên, Đơn giá, Bảo hành…) rồi bấm "Lưu bản ghi". Không bị đóng cứng theo mẫu nào.', tab: 'manual' },
-  { sel: '.upload-scroll', title: 'Tải file', text: 'Kéo bảng giá Excel/CSV (mỗi dòng thành 1 bản ghi) hoặc PDF/Word/TXT (đưa vào kho tri thức cho bot).', tab: 'manual' },
+  { sel: '.upload-scroll', title: 'Tải file', text: 'Cách nhanh nhất: kéo bảng giá Excel/CSV (mỗi dòng thành 1 bản ghi) hoặc PDF/Word/TXT (đưa vào kho tri thức cho bot).', tab: 'manual' },
+  { sel: '#fold-manual', title: 'Nhập tay', text: 'Khi không có sẵn file. Bấm mở, dán thẳng bảng từ Excel hoặc gõ "Tên trường: giá trị" — hệ thống tự tách trường, không phải điền từng ô.', tab: 'manual' },
   { sel: '#saved-bar', title: 'Dữ liệu đã lưu', text: 'Bấm để mở bảng: xem chi tiết, sửa tên/nội dung, hoặc xóa từng mục.', tab: 'manual' },
+  { sel: '#fold-sensitive', title: 'Trường nhạy cảm', text: 'Khai báo một lần các cột cần giữ kín (VD: Giá vốn). Từ đó mọi file tải lên đều tự tách cột đó khỏi model đám mây.', tab: 'manual' },
   { sel: '#rules-text', title: 'Bộ luật', text: 'Đặt quy tắc áp cho MỌI câu trả lời của bot (trả lời ngắn gọn, không bịa…). Mỗi dòng một quy tắc, sửa xong bấm Lưu.', tab: 'config' },
   { sel: '#tpl-bar', title: 'Mẫu câu lệnh', text: 'Tạo/sửa các mẫu soạn sẵn để chèn nhanh khi chat. Bấm mở danh sách mẫu.', tab: 'config' },
   { sel: '.side-nav', title: 'Điều hướng', text: 'Quay lại trang trò chuyện với bot.' },

@@ -135,6 +135,7 @@ function cleanObj(o) {
 const EMBED_CONCURRENCY = Number(process.env.EMBED_CONCURRENCY || 4);
 async function runPool(total, task, onProgress, concurrency = EMBED_CONCURRENCY) {
   let idx = 0, done = 0;
+  if (onProgress) onProgress(0, total); // báo tổng ngay, nếu không giao diện hiện "0/0" cho tới khi xong việc đầu
   async function worker() {
     while (idx < total) {
       const i = idx++;
