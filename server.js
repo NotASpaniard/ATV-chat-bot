@@ -33,6 +33,8 @@ const MODEL = process.env.MODEL || 'qwen2.5:3b';
 const RAG_TOP = Number(process.env.RAG_TOP || 4);              // số đoạn tối đa đưa vào prompt
 const RAG_CHUNK_CHARS = Number(process.env.RAG_CHUNK_CHARS || 1200); // ký tự tối đa mỗi đoạn
 const NUM_CTX = Number(process.env.NUM_CTX || 4096);           // cửa sổ ngữ cảnh (nhỏ = nhanh hơn)
+// Hạn chờ Ollama trả byte đầu tiên. Máy thiếu RAM thì Ollama treo vô hạn -> phải cắt để báo lỗi rõ.
+const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS || 180000);
 
 const SYSTEM_PROMPT =
   'Bạn là AVT Chat Bot — trợ lý AI nội bộ của doanh nghiệp, chạy hoàn toàn trên máy chủ nội bộ. ' +
@@ -170,6 +172,26 @@ async function geminiJson(model, system, user) {
 }
 
 // Gọi Ollama chat (stream) tới client. Trả về toàn bộ text đã sinh.
+// Ollama im lặng quá lâu thường là do máy hết RAM: model không nạp được nên request treo mãi.
+// Hỏi Ollama xem model nặng bao nhiêu, đọc RAM trống của máy, rồi nói thẳng nguyên nhân.
+async function ollamaStuckMessage(model, waitedSec) {
+  let detail = '';
+  try {
+    const { models = [] } = await (await fetch(`${OLLAMA}/api/tags`,
+      { signal: AbortSignal.timeout(5000) })).json();
+    const m = models.find((x) => x.name === model || x.name.split(':')[0] === String(model).split(':')[0]);
+    const freeGb = os.freemem() / 1073741824;
+    const needGb = m ? m.size / 1073741824 : 0;
+    detail = `\n\nModel "${model}" cần khoảng ${needGb ? needGb.toFixed(1) + ' GB' : 'vài GB'} RAM, `
+      + `máy còn trống ${freeGb.toFixed(1)} GB.`;
+    if (needGb && freeGb < needGb * 1.3) {
+      detail += ' Không đủ chỗ để nạp model — hãy đóng bớt ứng dụng nặng (trình duyệt, Discord, máy ảo…) '
+        + 'rồi thử lại, hoặc chuyển sang model đám mây ở nút chọn model.';
+    }
+  } catch {}
+  return `Model trên máy không phản hồi sau ${waitedSec} giây.` + detail;
+}
+
 async function streamOllama(res, model, systemContent, chatMessages, prefix = '') {
   const payload = {
     model: model || MODEL,
@@ -178,9 +200,19 @@ async function streamOllama(res, model, systemContent, chatMessages, prefix = ''
     keep_alive: '30m',
     options: { num_ctx: NUM_CTX }, // cửa sổ ngữ cảnh vừa đủ -> nhanh hơn nhiều khi chạy CPU
   };
-  const upstream = await fetch(`${OLLAMA}/api/chat`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-  });
+  // Nếu máy thiếu RAM, Ollama không nạp nổi model và treo vô hạn (người dùng chỉ thấy "đang nghĩ").
+  // Đặt hạn chờ để báo lỗi kèm nguyên nhân thay vì để treo im lặng.
+  let upstream;
+  try {
+    upstream = await fetch(`${OLLAMA}/api/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
+    });
+  } catch (e) {
+    res.writeHead(504, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end(await ollamaStuckMessage(model || MODEL, Math.round(OLLAMA_TIMEOUT_MS / 1000)));
+    return null;
+  }
   if (!upstream.ok) {
     res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Không gọi được Ollama: ' + upstream.status);
