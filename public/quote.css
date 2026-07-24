@@ -28,7 +28,50 @@
 .q-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
 .q-actions .status { font-size: 13px; }
 
-/* ---- Bước 2: danh sách ứng viên để soát ---- */
+/* ---- Bước 2: thẻ phương án bot đề xuất ---- */
+#q-options { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.q-opt {
+  border: 1px solid var(--border); border-radius: 14px; padding: 15px 17px;
+  background: var(--surface-2); transition: border-color var(--transition), background var(--transition);
+}
+.q-opt:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.q-opt.chosen { border-color: var(--accent); background: var(--accent-soft); }
+.q-opt-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.q-opt-title { font-size: 15.5px; font-weight: 650; color: var(--text); }
+.q-opt-sum { font-size: 15px; font-weight: 700; color: var(--accent-strong); white-space: nowrap; }
+.q-opt-sum i { font-weight: 400; font-size: 12px; color: var(--text-muted); }
+.q-opt-why { font-size: 13.5px; color: var(--text-muted); margin-top: 5px; line-height: 1.55; }
+.q-opt-items { list-style: none; padding: 0; margin: 11px 0 0; display: flex; flex-direction: column; gap: 5px; }
+.q-opt-items li {
+  font-size: 13.5px; color: var(--text); display: flex; justify-content: space-between; gap: 12px;
+  padding: 6px 11px; background: var(--surface); border-radius: 9px;
+}
+.q-opt-items li span { color: var(--text-muted); white-space: nowrap; }
+.q-opt-items li span.warn { color: var(--danger); }
+.q-opt-acts { display: flex; gap: 10px; margin-top: 13px; flex-wrap: wrap; }
+
+.q-opt-none {
+  margin-top: 14px; padding: 14px; border-radius: 12px; font-size: 13.5px;
+  background: var(--surface-2); color: var(--text-muted); border: 1px dashed var(--border-strong);
+}
+
+/* Ô góp ý khi bấm "Ý kiến khác" */
+.q-fb { margin-top: 14px; padding: 14px 16px; border-radius: 13px;
+  background: var(--surface-2); border: 1px solid var(--border); }
+.q-fb label { display: block; font-size: 13.5px; font-weight: 550; color: var(--text); }
+.q-fb .q-actions { margin-top: 12px; }
+.q-fb-log { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.q-fb-log:empty { display: none; }
+.q-fb-item {
+  font-size: 13px; color: var(--text); padding: 8px 12px; border-radius: 10px;
+  background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+}
+.q-fb-item span {
+  display: inline-block; font-size: 11px; font-weight: 700; color: var(--accent-strong);
+  margin-right: 8px; text-transform: uppercase; letter-spacing: .03em;
+}
+
+/* ---- Bước 3: danh sách ứng viên để soát ---- */
 #q-cands { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 .q-cand {
   display: flex; align-items: center; gap: 12px;

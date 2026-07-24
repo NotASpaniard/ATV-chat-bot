@@ -156,8 +156,12 @@ async function streamGemini(res, model, systemContent, chatMessages, prefix = ''
 }
 
 // Gọi Gemini trả JSON (cho tư vấn tối ưu).
+// Lỗi có mã HTTP để nơi gọi phân biệt 429 (hết lượt free) với lỗi khác
+class GeminiError extends Error {
+  constructor(status) { super('Gemini ' + status); this.status = status; }
+}
 async function geminiJson(model, system, user) {
-  const r = await fetch(`${GEMINI_URL}/${model}:generateContent?key=${GEMINI_KEY}`, {
+  const call = () => fetch(`${GEMINI_URL}/${model}:generateContent?key=${GEMINI_KEY}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: system }] },
@@ -165,7 +169,10 @@ async function geminiJson(model, system, user) {
       generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
     }),
   });
-  if (!r.ok) throw new Error('Gemini ' + r.status);
+  let r = await call();
+  // 429 = quá nhiều request/phút ở gói free -> chờ ngắn rồi thử lại một lần
+  if (r.status === 429) { await new Promise((s) => setTimeout(s, 3000)); r = await call(); }
+  if (!r.ok) throw new GeminiError(r.status);
   const j = await r.json();
   const c = j.candidates && j.candidates[0];
   return (c && c.content && c.content.parts && c.content.parts.map((p) => p.text || '').join('')) || '';
@@ -328,6 +335,98 @@ async function handleQuoteFind(req, res) {
     return sendJson(res, 200, { items: [], warning: 'Hệ thống tra cứu (bge-m3) đang lỗi nên chưa tìm được gì. Kiểm tra Ollama.' });
   }
   return sendJson(res, 200, { items });
+}
+
+// Bước 1b: nhờ model ĐỀ XUẤT vài phương án từ đúng những ứng viên tìm được.
+// Model chỉ được chọn theo SỐ THỨ TỰ, không được bịa sản phẩm, không được tính tiền.
+// Người dùng góp ý ("ý kiến khác") thì góp ý được đưa vào prompt để đề xuất lại.
+async function handleQuoteAdvise(req, res) {
+  const { requirement, feedback } = await readJson(req);
+  if (!requirement || !requirement.trim()) return sendJson(res, 400, { error: 'Chưa nhập yêu cầu' });
+
+  // Lấy rộng tay hơn bước tìm thường: đề xuất phải nhìn đủ danh mục mới ghép được hệ thống trọn bộ
+  const candidates = await db.findQuoteCandidates(requirement, keyTokens(requirement), 20);
+  if (!candidates.length) return sendJson(res, 200, { candidates: [], options: [] });
+
+  const model = await activeModel();
+  const senSet = await db.getSensitiveFieldSet();
+
+  // Danh mục đưa cho model: BỎ mọi cột nhạy cảm, kể cả khi bản ghi chưa được tách
+  const catText = candidates.map((c, i) => {
+    let desc;
+    if (c.kind === 'record') {
+      desc = Object.entries(c.fields || {})
+        .filter(([k]) => !senSet.has(normCol(k)))
+        .map(([k, v]) => `${k}: ${v}`).join(' | ');
+    } else {
+      desc = 'Tài liệu kỹ thuật — ' + String(c.snippet || '').replace(/\s+/g, ' ').slice(0, 200);
+    }
+    return `${i + 1}. [${c.kind === 'document' ? 'tài liệu' : c.group || 'bản ghi'}] ${c.title} — ${desc}`;
+  }).join('\n');
+
+  const fb = Array.isArray(feedback) ? feedback.filter(Boolean) : [];
+  const system =
+    'Bạn là chuyên viên tư vấn thiết bị, đang lập phương án cho khách.\n' +
+    'DANH MỤC hiện có (chỉ được chọn trong đây, theo SỐ THỨ TỰ):\n' + catText +
+    '\n\nHãy đề xuất 2 đến 3 PHƯƠNG ÁN khác nhau đáp ứng yêu cầu của khách ' +
+    '(ví dụ: gọn nhẹ / cân bằng / đầy đủ). Mỗi phương án phải đủ các phần khách cần ' +
+    '(có camera thì thường cần cả đầu ghi và ổ cứng nếu danh mục có). ' +
+    'TUYỆT ĐỐI KHÔNG bịa sản phẩm ngoài danh mục. KHÔNG tự tính tiền.' +
+    (fb.length ? '\n\nKHÁCH ĐÃ GÓP Ý về các đề xuất trước, phải sửa theo:\n- ' + fb.join('\n- ') : '') +
+    '\n\nTrả về DUY NHẤT một JSON: {"options":[{"title":"tên ngắn của phương án",' +
+    '"reason":"vì sao hợp với yêu cầu, 1-2 câu tiếng Việt",' +
+    '"items":[{"index":<số thứ tự>,"qty":<số nguyên>}]}],"missing":"thứ khách cần mà danh mục không có (nếu có)"}';
+
+  let parsed = null, rateLimited = false;
+  for (let attempt = 0; attempt < 2 && !parsed; attempt++) {
+    try {
+      const raw = isCloudModel(model)
+        ? await geminiJson(model, system, 'Yêu cầu của khách: ' + requirement)
+        : await ollamaJson(model, system, 'Yêu cầu của khách: ' + requirement);
+      const o = JSON.parse(raw);
+      if (o && Array.isArray(o.options)) parsed = o;
+    } catch (e) {
+      if (e.status === 429) rateLimited = true;
+      console.error('Đề xuất lỗi (lần ' + (attempt + 1) + '):', e.message);
+    }
+  }
+  if (!parsed) {
+    const note = rateLimited
+      ? 'Gemini đang quá tải (hết lượt miễn phí trong phút này). Chờ khoảng một phút rồi bấm lại, hoặc tự chọn ở danh sách bên dưới.'
+      : 'Chưa tự đề xuất được — hãy tự chọn ở danh sách bên dưới.';
+    return sendJson(res, 200, { candidates, options: [], note });
+  }
+
+  // Quy chiếu về ứng viên thật + SERVER tự tính giá tạm tính (model không đụng vào tiền)
+  const options = [];
+  for (const opt of parsed.options.slice(0, 3)) {
+    const merged = new Map();
+    for (const it of opt.items || []) {
+      const idx = Number(it.index) - 1;
+      if (!(idx >= 0 && idx < candidates.length)) continue;
+      const qty = Math.max(1, Math.min(10000, Math.floor(Number(it.qty) || 1)));
+      merged.set(idx, (merged.get(idx) || 0) + qty);
+    }
+    if (!merged.size) continue;
+
+    let estTotal = 0, priced = 0;
+    const items = [];
+    for (const [idx, qty] of merged) {
+      const c = candidates[idx];
+      // Giá lấy từ DB (kể cả khi nằm ở bản ghi nhạy cảm đã tách), không hỏi model
+      const all = { ...(c.fields || {}), ...(await db.getSensitiveFieldsFor(c.title)) };
+      const price = pickPrice(all);
+      if (!isNaN(price) && price > 0) { estTotal += price * qty; priced++; }
+      items.push({ kind: c.kind, id: c.id, title: c.title, qty, price: isNaN(price) ? null : price });
+    }
+    options.push({
+      title: String(opt.title || 'Phương án').slice(0, 60),
+      reason: String(opt.reason || '').slice(0, 400),
+      items, estTotal, allPriced: priced === items.length,
+    });
+  }
+
+  return sendJson(res, 200, { candidates, options, missing: parsed.missing || '', model });
 }
 
 // Bước 2: dựng bảng từ những mục người dùng đã xác nhận
@@ -756,6 +855,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/advise') return await handleAdvise(req, res);
     // ---- Báo giá: tìm ứng viên -> soát -> dựng bảng ----
     if (req.method === 'POST' && p === '/api/quote/find') return await handleQuoteFind(req, res);
+    if (req.method === 'POST' && p === '/api/quote/advise') return await handleQuoteAdvise(req, res);
     if (req.method === 'POST' && p === '/api/quote/build') return await handleQuoteBuild(req, res);
     if (req.method === 'GET' && p === '/api/quote/forms')
       return sendJson(res, 200, { forms: await db.getQuoteForms() });

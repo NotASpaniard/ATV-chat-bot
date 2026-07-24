@@ -696,18 +696,25 @@ async function findQuoteCandidates(queryText, tokens = [], limit = 12) {
     }
   }
 
-  // 2) Khớp theo ngữ nghĩa — bắt được cả khi khách mô tả bằng lời ("camera ngoài trời nhìn đêm")
+  // 2) Khớp theo ngữ nghĩa — bắt được cả khi khách mô tả bằng lời ("camera ngoài trời nhìn đêm").
+  // Tra RIÊNG bản ghi và tài liệu: một tài liệu vài trăm đoạn sẽ chiếm hết chỗ trong một
+  // truy vấn chung, làm bảng giá không lọt vào danh sách và đề xuất bị thiếu món.
+  // Ngưỡng để thấp có chủ đích — khách mô tả cả hệ thống thì đầu ghi/ổ cứng khớp yếu về
+  // ngữ nghĩa nhưng vẫn phải có mặt. Nhiễu đã có bước soát của người dùng chặn.
   try {
     const vec = await embed('search_query: ' + queryText);
-    const { rows } = await pg.query(
-      `SELECT source_type, source_id, content, 1 - (embedding <=> $1::vector) AS score
-       FROM knowledge WHERE source_type <> 'memory'
-       ORDER BY embedding <=> $1::vector LIMIT 30`,
-      [toVectorLiteral(vec)]
-    );
-    for (const r of rows) {
-      if (Number(r.score) < 0.4 || skip(r.source_type, r.source_id)) continue;
-      push(r.source_type, r.source_id, Number(r.score), { snippet: r.content });
+    const vlit = toVectorLiteral(vec);
+    for (const [kind, take] of [['record', 25], ['document', 10]]) {
+      const { rows } = await pg.query(
+        `SELECT source_type, source_id, content, 1 - (embedding <=> $1::vector) AS score
+         FROM knowledge WHERE source_type = $2
+         ORDER BY embedding <=> $1::vector LIMIT ${take}`,
+        [vlit, kind]
+      );
+      for (const r of rows) {
+        if (Number(r.score) < 0.25 || skip(r.source_type, r.source_id)) continue;
+        push(r.source_type, r.source_id, Number(r.score), { snippet: r.content });
+      }
     }
   } catch { /* embedding lỗi thì vẫn còn kết quả từ khóa */ }
 

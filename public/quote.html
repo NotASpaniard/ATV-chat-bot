@@ -68,9 +68,27 @@
         </div>
       </section>
 
-      <!-- BƯỚC 2: soát lại trước khi dựng bảng -->
+      <!-- BƯỚC 2: bot đề xuất phương án, có nút đồng ý / góp ý lại -->
+      <section class="q-card hidden" id="step-advise">
+        <div class="q-step"><span class="q-num">2</span> Đề xuất cho yêu cầu này</div>
+        <p class="q-sub">Bot chỉ ghép từ đúng dữ liệu bạn đã nạp. Giá do hệ thống tính, không phải model tự bịa.</p>
+        <div id="q-options"></div>
+        <div id="q-missing" class="q-warn hidden"></div>
+        <div id="q-feedback" class="q-fb hidden">
+          <label for="q-fb-text">Chưa ưng chỗ nào?</label>
+          <textarea id="q-fb-text" rows="2" placeholder="VD: bỏ router đi, đổi sang camera 4MP, ngân sách dưới 8 triệu"></textarea>
+          <div class="q-actions">
+            <button id="q-fb-send" class="btn-primary" type="button">Tìm lại theo góp ý</button>
+            <button id="q-fb-cancel" class="btn-ghost" type="button">Bỏ qua</button>
+            <span class="status" id="q-fb-status"></span>
+          </div>
+        </div>
+        <div id="q-fb-log" class="q-fb-log"></div>
+      </section>
+
+      <!-- BƯỚC 3: soát lại / chỉnh tay trước khi dựng bảng -->
       <section class="q-card hidden" id="step-check">
-        <div class="q-step"><span class="q-num">2</span> Đúng những thứ này chứ?</div>
+        <div class="q-step"><span class="q-num">3</span> Soát lại &amp; chỉnh tay</div>
         <p class="q-sub">Bỏ tick những mục không phải thứ bạn cần. Đây là bước chặn lấy nhầm sản phẩm.</p>
         <div id="q-cands"></div>
         <div class="q-form-pick">
@@ -86,7 +104,7 @@
 
       <!-- BƯỚC 3: bảng kết quả -->
       <section class="q-card hidden" id="step-table">
-        <div class="q-step"><span class="q-num">3</span> Bảng báo giá</div>
+        <div class="q-step"><span class="q-num">4</span> Bảng báo giá</div>
         <div id="q-warn" class="q-warn hidden"></div>
         <div class="q-table-wrap"><table id="q-table"></table></div>
         <div class="q-actions">

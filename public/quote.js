@@ -26,36 +26,113 @@ let picked = new Map(); // key "kind:id" -> số lượng
 let forms = [];
 let built = null;      // bảng đã dựng
 
-// ---------- BƯỚC 1: tìm ----------
-$('q-find').addEventListener('click', async () => {
+// ---------- BƯỚC 1 -> 2: tìm và nhờ bot đề xuất ----------
+let feedback = [];   // các góp ý đã gửi, dồn lại để lần đề xuất sau nhớ hết
+
+$('q-find').addEventListener('click', () => { feedback = []; $('q-fb-log').innerHTML = ''; runAdvise(); });
+
+async function runAdvise() {
   const requirement = $('q-req').value.trim();
   const st = $('q-find-status');
   if (!requirement) { setStatus(st, 'Hãy mô tả thứ cần báo giá.', false); return; }
   $('q-find').disabled = true;
-  setStatus(st, 'Đang tìm trong dữ liệu nội bộ…');
+  setStatus(st, feedback.length ? 'Đang tìm lại theo góp ý…' : 'Đang tìm và lập phương án…');
   try {
-    const r = await api('/api/quote/find', {
+    const r = await api('/api/quote/advise', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requirement }),
+      body: JSON.stringify({ requirement, feedback }),
     });
-    candidates = r.items || [];
-    if (r.warning) { setStatus(st, r.warning, false); }
-    else if (!candidates.length) {
+    candidates = r.candidates || [];
+    if (!candidates.length) {
       setStatus(st, 'Không tìm thấy gì khớp. Kiểm tra lại tên sản phẩm, hoặc nạp dữ liệu ở Quản trị dữ liệu.', false);
-    } else setStatus(st, `Tìm được ${candidates.length} mục — soát lại ở bước 2.`);
+      $('step-advise').classList.add('hidden');
+      $('step-check').classList.add('hidden');
+      return;
+    }
+    setStatus(st, '');
+    renderOptions(r.options || [], r.missing, r.note);
 
-    // Chỉ tick sẵn thứ khớp CHẮC CHẮN (khớp mã/từ khóa, điểm >= 0.85). Thứ chỉ gần giống
-    // để người dùng tự tick — tránh lặng lẽ đưa nhầm sản phẩm vào báo giá.
+    // Danh sách soát vẫn dựng sẵn: chỉ tick thứ khớp CHẮC CHẮN (điểm >= 0.85),
+    // thứ gần giống để người dùng tự quyết — tránh lặng lẽ đưa nhầm sản phẩm vào báo giá.
     picked = new Map();
     candidates.forEach((c) => {
       if (c.kind === 'record' && Number(c.score) >= 0.85) picked.set(key(c), guessQty(requirement, c.title));
     });
     renderCandidates();
-    $('step-check').classList.toggle('hidden', !candidates.length);
-    if (candidates.length) $('step-check').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('step-advise').classList.remove('hidden');
+    $('step-check').classList.remove('hidden');
+    $('step-advise').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
     setStatus(st, 'Lỗi: ' + e.message, false);
   } finally { $('q-find').disabled = false; }
+}
+
+function renderOptions(options, missing, note) {
+  $('q-options').innerHTML = options.length
+    ? options.map((o, i) => `
+      <div class="q-opt" data-i="${i}">
+        <div class="q-opt-head">
+          <span class="q-opt-title">${esc(o.title)}</span>
+          <span class="q-opt-sum">${o.estTotal ? fmtVnd(o.estTotal) + ' đ' : ''}${o.allPriced ? '' : ' <i>(thiếu giá vài mục)</i>'}</span>
+        </div>
+        <div class="q-opt-why">${esc(o.reason)}</div>
+        <ul class="q-opt-items">${o.items.map((it) =>
+          `<li><b>${esc(it.title)}</b> &times;${it.qty}${it.price != null ? ` <span>${fmtVnd(it.price * it.qty)} đ</span>` : ' <span class="warn">chưa có giá</span>'}</li>`).join('')}</ul>
+        <div class="q-opt-acts">
+          <button type="button" class="btn-primary q-accept">Đồng ý — dựng bảng</button>
+          <button type="button" class="btn-ghost q-other">Ý kiến khác</button>
+        </div>
+      </div>`).join('')
+    : `<div class="q-opt-none">${esc(note || 'Chưa lập được phương án tự động. Bạn tự chọn ở phần soát bên dưới.')}</div>`;
+
+  const mw = $('q-missing');
+  if (missing) { mw.textContent = 'Yêu cầu có thứ chưa có trong dữ liệu: ' + missing; mw.classList.remove('hidden'); }
+  else mw.classList.add('hidden');
+  $('q-feedback').classList.add('hidden');
+  lastOptions = options;
+}
+let lastOptions = [];
+
+// Đồng ý -> nạp đúng các mục của phương án vào danh sách soát rồi dựng bảng luôn
+$('q-options').addEventListener('click', async (e) => {
+  const card = e.target.closest('.q-opt');
+  if (!card) return;
+  const opt = lastOptions[Number(card.dataset.i)];
+  if (!opt) return;
+
+  if (e.target.closest('.q-accept')) {
+    picked = new Map();
+    for (const it of opt.items) {
+      const c = candidates.find((x) => x.kind === it.kind && Number(x.id) === Number(it.id));
+      if (c) picked.set(key(c), it.qty);
+    }
+    renderCandidates();
+    document.querySelectorAll('.q-opt').forEach((el) => el.classList.toggle('chosen', el === card));
+    await buildTable();
+    return;
+  }
+  if (e.target.closest('.q-other')) {
+    $('q-feedback').classList.remove('hidden');
+    $('q-fb-text').focus();
+  }
+});
+
+// Ý kiến khác -> dồn góp ý vào rồi nhờ bot đề xuất lại
+$('q-fb-send').addEventListener('click', async () => {
+  const txt = $('q-fb-text').value.trim();
+  if (!txt) { setStatus($('q-fb-status'), 'Hãy ghi rõ chỗ chưa ưng.', false); return; }
+  feedback.push(txt);
+  $('q-fb-text').value = '';
+  $('q-fb-log').innerHTML = feedback.map((f, i) =>
+    `<div class="q-fb-item"><span>Góp ý ${i + 1}</span>${esc(f)}</div>`).join('');
+  setStatus($('q-fb-status'), '');
+  $('q-feedback').classList.add('hidden');
+  await runAdvise();
+});
+$('q-fb-cancel').addEventListener('click', () => {
+  $('q-fb-text').value = '';
+  setStatus($('q-fb-status'), '');
+  $('q-feedback').classList.add('hidden');
 });
 
 const key = (c) => c.kind + ':' + c.id;
@@ -142,8 +219,10 @@ $('form-save').addEventListener('click', async () => {
   } catch (e) { setStatus($('form-status'), 'Lỗi: ' + e.message, false); }
 });
 
-// ---------- BƯỚC 2 -> 3: dựng bảng ----------
-$('q-build').addEventListener('click', async () => {
+// ---------- BƯỚC 3 -> 4: dựng bảng ----------
+$('q-build').addEventListener('click', () => buildTable());
+
+async function buildTable() {
   const st = $('q-build-status');
   if (!picked.size) { setStatus(st, 'Hãy tick ít nhất một mục.', false); return; }
   const f = currentForm();
@@ -165,7 +244,7 @@ $('q-build').addEventListener('click', async () => {
   } catch (e) {
     setStatus(st, 'Lỗi: ' + e.message, false);
   } finally { $('q-build').disabled = false; }
-});
+}
 
 // Chuẩn hóa tên cột để so khớp: hạ chữ thường TRƯỚC rồi mới thay đ->d,
 // nếu không thì "Đơn giá" (Đ hoa) không khớp được với "don gia".
@@ -273,10 +352,10 @@ $('q-xlsx').addEventListener('click', async () => {
 
 // ---------- Báo giá mới ----------
 $('new-quote').addEventListener('click', () => {
-  candidates = []; picked = new Map(); built = null;
+  candidates = []; picked = new Map(); built = null; feedback = []; lastOptions = [];
   $('q-req').value = ''; $('q-customer').value = '';
-  $('step-check').classList.add('hidden');
-  $('step-table').classList.add('hidden');
+  $('q-fb-log').innerHTML = '';
+  ['step-advise', 'step-check', 'step-table'].forEach((s) => $(s).classList.add('hidden'));
   setStatus($('q-find-status'), '');
   $('q-req').focus();
 });
@@ -347,7 +426,8 @@ loadForms();
 window.TOUR_KEY = 'avt-tour-quote-done';
 window.TOUR_STEPS = [
   { sel: '#step-ask', title: 'Mô tả cần báo giá gì', text: 'Gõ bằng lời thường: số lượng, loại thiết bị, yêu cầu kỹ thuật. Hoặc gọi thẳng tên model nếu đã biết.' },
-  { sel: '#step-check', title: 'Soát lại trước khi dựng', text: 'Hệ thống hiện những gì nó tìm được trong dữ liệu của bạn. Bỏ tick thứ không đúng, sửa số lượng. Bước này chặn việc lấy nhầm sản phẩm.' },
+  { sel: '#step-advise', title: 'Bot đề xuất phương án', text: 'Bot ghép 2-3 phương án từ đúng dữ liệu bạn đã nạp, giá do hệ thống tính. Ưng thì bấm "Đồng ý" là ra bảng luôn; chưa ưng thì bấm "Ý kiến khác", ghi rõ chỗ cần sửa để bot tìm lại.' },
+  { sel: '#step-check', title: 'Soát lại & chỉnh tay', text: 'Danh sách đầy đủ những gì tìm được. Bỏ tick thứ không đúng, sửa số lượng, rồi tự dựng bảng nếu không dùng phương án nào ở trên.' },
   { sel: '#q-form', title: 'Form trình bày', text: 'Chọn bộ cột cho bảng. Bấm "Sửa cột" để tự đặt cột theo ý bạn — thêm Bảo hành, Xuất xứ, Ghi chú…' },
   { sel: '#step-chat', title: 'Hỏi nhanh', text: 'Cần tra thêm chi tiết trong tài liệu (thông số, chuẩn nén…) thì hỏi ở đây, không phải rời trang.' },
   { sel: '#model-tag', title: 'Model đang dùng', text: 'Model đám mây chạy nhanh nhưng không bao giờ thấy các cột bạn đánh dấu nhạy cảm — những cột đó server đọc thẳng từ dữ liệu nội bộ.' },
