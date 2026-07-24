@@ -164,55 +164,114 @@ function wireManualEntry() {
 }
 wireManualEntry();
 
-// ===== DANH SÁCH TRƯỜNG NHẠY CẢM (tự ẩn khỏi đám mây) =====
-let senfList = [];
-const senfChips = document.getElementById('senf-chips');
+// ===== TRƯỜNG NHẠY CẢM: bấm khóa/mở ngay trên các cột đang có trong dữ liệu =====
+let senfList = [];       // danh sách đã LƯU trên máy chủ
+let senfDraft = [];      // danh sách đang chỉnh (chưa lưu)
+let senfCols = [];       // các cột có thật trong dữ liệu: { name, count, inSensitive }
+const senfColsEl = document.getElementById('senf-cols');
 const senfInput = document.getElementById('senf-input');
 const senfStatus = document.getElementById('senf-status');
-function renderSenfChips() {
-  senfChips.innerHTML = senfList.length
-    ? senfList.map((f, i) => `<span class="tag pick sf-chip">${esc(f)}<button type="button" class="sf-x" data-i="${i}" title="Bỏ">×</button></span>`).join('')
-    : '<span class="empty" style="padding:0">Chưa khai báo trường nào. Mọi cột đang để đám mây đọc được.</span>';
-  // Số trường hiện ngay trên thanh gấp để biết mà không cần mở ra
-  const cnt = document.getElementById('senf-count');
-  if (cnt) { cnt.textContent = senfList.length || ''; cnt.classList.toggle('hidden', !senfList.length); }
-}
+const senfSaveBtn = document.getElementById('senf-save');
+
 // Chuẩn hóa để so trùng: bỏ dấu + hoa thường + gộp khoảng trắng (khớp với backend)
 const normField = (s) => String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase().replace(/\s+/g, ' ').trim();
-function addSenf(name) {
-  const v = (name || '').trim();
-  if (!v) return;
-  if (!senfList.some((x) => normField(x) === normField(v))) senfList.push(v);
-  renderSenfChips();
+const inDraft = (name) => senfDraft.some((x) => normField(x) === normField(name));
+const senfChanged = () => senfDraft.length !== senfList.length
+  || senfDraft.some((d) => !senfList.some((s) => normField(s) === normField(d)));
+
+const LOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>';
+const UNLOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 7.5-2"/></svg>';
+
+// Nhãn dưới tên cột: cho biết cột nằm ở bao nhiêu bản ghi và bao nhiêu bản đã khóa xong
+function sfCountLabel(c) {
+  if (c.notFound) return 'chưa có trong dữ liệu';
+  if (c.hidden >= c.count) return `${c.count} bản ghi · đã khóa`;
+  if (c.hidden > 0) return `${c.count} bản ghi · ${c.count - c.hidden} chưa khóa`;
+  return `${c.count} bản ghi`;
 }
-senfInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addSenf(senfInput.value); senfInput.value = ''; } });
-document.getElementById('senf-add').addEventListener('click', () => { addSenf(senfInput.value); senfInput.value = ''; senfInput.focus(); });
-senfChips.addEventListener('click', (e) => { const x = e.target.closest('.sf-x'); if (x) { senfList.splice(+x.dataset.i, 1); renderSenfChips(); } });
-document.getElementById('senf-save').addEventListener('click', async (e) => {
-  const btn = e.target; btn.disabled = true;
-  setStatus(senfStatus, 'Đang lưu…', true);
-  try {
-    await api('/api/sensitive-fields', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: senfList }) });
-    setStatus(senfStatus, 'Đã lưu. Áp dụng ngay cho dữ liệu nhập/tải MỚI. Dữ liệu cũ: bấm "Áp dụng cho dữ liệu đã có".', true);
-  } catch (err) { setStatus(senfStatus, 'Lỗi: ' + err.message, false); }
-  finally { btn.disabled = false; }
+
+function renderSenf() {
+  // Cột có thật trong dữ liệu + cột chỉ mới khai báo (chưa xuất hiện ở đâu)
+  const extra = senfDraft
+    .filter((d) => !senfCols.some((c) => normField(c.name) === normField(d)))
+    .map((name) => ({ name, count: 0, notFound: true }));
+  const all = [...senfCols, ...extra];
+
+  senfColsEl.innerHTML = all.length
+    ? all.map((c) => {
+        const on = inDraft(c.name);
+        return `<button type="button" class="sf-col${on ? ' on' : ''}${c.notFound ? ' ghost' : ''}" data-name="${esc(c.name)}"
+          title="${on ? 'Đang khóa — bấm để mở cho đám mây đọc' : 'Bấm để khóa, đám mây sẽ không đọc cột này'}">
+          <span class="sf-ico">${on ? LOCK_SVG : UNLOCK_SVG}</span>
+          <span class="sf-nm">${esc(c.name)}</span>
+          <span class="sf-ct">${esc(sfCountLabel(c))}</span>
+        </button>`;
+      }).join('')
+    : '<span class="empty" style="padding:0">Chưa có dữ liệu nào để chọn. Tải file hoặc nhập tay trước, hoặc gõ thêm cột ở dưới.</span>';
+
+  const changed = senfChanged();
+  senfSaveBtn.disabled = !changed;
+  senfSaveBtn.textContent = changed ? `Lưu & khóa dữ liệu (${senfDraft.length} cột)` : 'Đã lưu';
+
+  const cnt = document.getElementById('senf-count');
+  if (cnt) { cnt.textContent = senfDraft.length || ''; cnt.classList.toggle('hidden', !senfDraft.length); }
+}
+
+function toggleSenf(name) {
+  senfDraft = inDraft(name)
+    ? senfDraft.filter((x) => normField(x) !== normField(name))
+    : [...senfDraft, name];
+  setStatus(senfStatus, '', true);
+  renderSenf();
+}
+
+senfColsEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('.sf-col');
+  if (btn) toggleSenf(btn.dataset.name);
 });
-document.getElementById('senf-apply').addEventListener('click', async (e) => {
-  if (!(await avtConfirm('Rà lại toàn bộ dữ liệu hiện có và tách các cột nhạy cảm ra khỏi đám mây? (nên bấm "Lưu danh sách" trước)', false))) return;
-  const btn = e.target; btn.disabled = true;
-  setStatus(senfStatus, 'Đang rà soát & lọc dữ liệu…', true);
+const addTyped = () => {
+  const v = senfInput.value.trim();
+  if (!v) return;
+  if (!inDraft(v)) senfDraft.push(v);
+  senfInput.value = '';
+  renderSenf();
+};
+senfInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addTyped(); } });
+document.getElementById('senf-add').addEventListener('click', () => { addTyped(); senfInput.focus(); });
+
+// Lưu danh sách VÀ lọc dữ liệu cũ trong một lần bấm — trước đây là 2 nút, dễ quên bước 2
+senfSaveBtn.addEventListener('click', async () => {
+  senfSaveBtn.disabled = true;
+  setStatus(senfStatus, 'Đang lưu danh sách…', true);
   try {
+    await api('/api/sensitive-fields', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: senfDraft }),
+    });
+    senfList = [...senfDraft];
+    setStatus(senfStatus, 'Đang rà lại dữ liệu đã có…', true);
     const { jobId } = await api('/api/records/reapply-sensitive', { method: 'POST' });
-    const r = await pollJob(jobId, (done, total) => setStatus(senfStatus, `Đang xử lý ${done}/${total}…`, true));
-    const msg = r.fields
-      ? `Xong. Đã tách ${r.fields} trường dữ liệu nhạy cảm trong ${r.records}/${r.scanned} bản ghi. Gemini vẫn đọc được các bản ghi này (đã bỏ cột nhạy cảm).`
-      : `Xong. Quét ${r.scanned} bản ghi, không có cột nào trùng danh sách trường nhạy cảm.`;
-    setStatus(senfStatus, msg, true);
+    const r = await pollJob(jobId, (done, total) => setStatus(senfStatus, `Đang rà ${done}/${total}…`, true));
+    // r.scanned chỉ đếm bản ghi CHƯA khóa — các bản khóa từ trước không cần rà lại
+    setStatus(senfStatus, r.fields
+      ? `Xong. Đã tách ${r.fields} trường trong ${r.records}/${r.scanned} bản ghi — đám mây không còn đọc được các cột này.`
+      : `Xong. Đã lưu danh sách. Rà ${r.scanned} bản ghi chưa khóa, không bản ghi nào chứa cột trong danh sách (bản ghi đã khóa từ trước không cần rà lại).`, true);
+    await loadSenfCols();
     refreshSavedCount();
-  } catch (err) { setStatus(senfStatus, 'Lỗi: ' + err.message, false); }
-  finally { btn.disabled = false; }
+  } catch (err) {
+    setStatus(senfStatus, 'Lỗi: ' + err.message, false);
+  } finally { renderSenf(); }
 });
-(async () => { try { senfList = (await api('/api/sensitive-fields')).fields || []; } catch {} renderSenfChips(); })();
+
+async function loadSenfCols() {
+  try { senfCols = (await api('/api/fields')).fields || []; } catch { senfCols = []; }
+  renderSenf();
+}
+(async () => {
+  try { senfList = (await api('/api/sensitive-fields')).fields || []; } catch {}
+  senfDraft = [...senfList];
+  await loadSenfCols();
+})();
 // ===== TẢI FILE LÊN (thanh -> popup: kéo thả -> danh sách -> trang sửa nội dung) =====
 const MAX_UPLOAD_MB = 200;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

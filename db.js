@@ -423,6 +423,33 @@ async function reapplySensitive(onProgress) {
   return { scanned: rows.length, records, fields };
 }
 
+// Thống kê tên cột đang dùng trong toàn bộ bản ghi, kèm số bản ghi có cột đó.
+// Dùng để GỢI Ý khi khai báo trường nhạy cảm — người dùng bấm chọn thay vì gõ đúng từ trí nhớ.
+// Gộp theo tên đã chuẩn hóa (bỏ dấu, không phân biệt hoa thường) như lúc so khớp thật.
+async function listFieldNames() {
+  const { rows } = await pg.query(
+    `SELECT k AS name, count(*)::int AS cnt,
+            count(*) FILTER (WHERE r.sensitive)::int AS hidden
+     FROM records r, jsonb_object_keys(r.data) AS k
+     GROUP BY k`
+  );
+  const byNorm = new Map();
+  for (const r of rows) {
+    const key = normKey(r.name);
+    const cur = byNorm.get(key);
+    if (cur) {
+      cur.count += r.cnt;
+      cur.hidden += r.hidden;
+      if (r.cnt > cur.topCount) { cur.name = r.name; cur.topCount = r.cnt; } // lấy cách viết phổ biến nhất
+    } else {
+      byNorm.set(key, { name: r.name, count: r.cnt, hidden: r.hidden, topCount: r.cnt });
+    }
+  }
+  return [...byNorm.values()]
+    .map(({ name, count, hidden }) => ({ name, count, hidden }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'vi'));
+}
+
 // Cập nhật data + cờ nhạy cảm của 1 bản ghi và re-embed dòng knowledge tương ứng.
 async function updateRecordData(id, collection, data, sensitive) {
   await pg.query('UPDATE records SET data=$1, sensitive=$2 WHERE id=$3', [data, sensitive, id]);
@@ -622,7 +649,7 @@ module.exports = {
   init, close,
   ensureSession, saveMessage, getMessages, listSessions, deleteSession, saveMemory,
   addDocument, listDocuments, deleteDocument, renameDocument, getDocument, updateDocumentContent,
-  addRecord, addRecordsBulk, listRecords, deleteRecord, updateRecord, reindexRecords,
+  addRecord, addRecordsBulk, listRecords, deleteRecord, updateRecord, reindexRecords, listFieldNames,
   retrieve, retrieveKeyword, retrieveRecords, retrieveDevices, embedOk,
   getSensitiveFields, setSensitiveFields, reapplySensitive,
   getSetting, setSetting, getRules,

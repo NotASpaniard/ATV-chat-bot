@@ -126,17 +126,25 @@
             <svg class="fold-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
           </summary>
           <div class="fold-body">
-            <p class="sub">Khai báo tên cột cần giữ kín (VD: <i>Giá vốn, Chiết khấu</i>). Không phân biệt hoa thường hay dấu. Mọi lần nhập tay/tải file, hệ thống <b>tự tách</b> cột trùng tên — Gemini không đọc được, model trên máy vẫn thấy.</p>
-            <div class="sf-add">
-              <input id="senf-input" placeholder="Nhập tên cột rồi Enter (VD: Giá vốn)" />
-              <button type="button" id="senf-add" class="btn-ghost">Thêm</button>
-            </div>
-            <div class="chips" id="senf-chips"></div>
+            <p class="sub">Cột nào bấm cho <b>đóng khóa</b> thì model đám mây (Gemini) không đọc được nữa — model chạy trên máy vẫn thấy đủ. Không phân biệt hoa thường hay dấu: <i>Đơn giá = đơn giá = ĐƠN GIÁ</i>.</p>
+
+            <!-- Bấm chọn ngay trên các cột đang có trong dữ liệu, không phải gõ đúng từ trí nhớ -->
+            <div class="sf-cols" id="senf-cols">Đang đọc các cột trong dữ liệu…</div>
+
+            <!-- Cột chưa có trong dữ liệu (sẽ nhập sau) thì gõ thêm ở đây -->
+            <details class="sf-more">
+              <summary>Thêm cột chưa có trong dữ liệu</summary>
+              <div class="sf-add">
+                <input id="senf-input" placeholder="Gõ tên cột rồi Enter (VD: Giá vốn)" />
+                <button type="button" id="senf-add" class="btn-ghost">Thêm</button>
+              </div>
+            </details>
+
             <div class="form-actions">
-              <button type="button" id="senf-save" class="btn-primary">Lưu danh sách</button>
-              <button type="button" id="senf-apply" class="btn-ghost" title="Rà lại toàn bộ dữ liệu đang có, tách các cột nhạy cảm ra khỏi đám mây">Lọc dữ liệu hiện tại</button>
+              <button type="button" id="senf-save" class="btn-primary" disabled>Lưu &amp; khóa dữ liệu</button>
               <span class="status" id="senf-status"></span>
             </div>
+
             <button type="button" id="sen-bar" class="saved-bar sensitive">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-3 8-7 10-4-2-7-5.6-7-10V6z"/><path d="M12 8v4M12 15.5v.5"/></svg>
               <span>Đang giấu khỏi đám mây</span>

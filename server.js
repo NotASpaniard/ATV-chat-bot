@@ -630,6 +630,9 @@ const server = http.createServer(async (req, res) => {
     // Danh sách TÊN TRƯỜNG nhạy cảm (tự ẩn khỏi model đám mây khi nhập/tải lên)
     if (req.method === 'GET' && p === '/api/sensitive-fields')
       return sendJson(res, 200, { fields: await db.getSensitiveFields() });
+    // Tên các cột đang có trong dữ liệu -> gợi ý bấm chọn thay vì gõ tay
+    if (req.method === 'GET' && p === '/api/fields')
+      return sendJson(res, 200, { fields: await db.listFieldNames() });
     if (req.method === 'POST' && p === '/api/sensitive-fields') {
       const { fields } = await readJson(req);
       if (!Array.isArray(fields)) return sendJson(res, 400, { error: 'Thiếu danh sách trường' });
