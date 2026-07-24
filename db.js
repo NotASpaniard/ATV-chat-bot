@@ -230,6 +230,13 @@ function chunkText(text, maxLen = 2000, overlap = 200) {
 }
 
 // ---- Tài liệu ----
+// Gắn TÊN TÀI LIỆU vào đầu mỗi đoạn: nhiều tài liệu có mã model chỉ nằm ở tên file
+// (VD "i-PRO A4 R1") mà không có trong nội dung -> nếu không gắn thì hỏi theo mã sẽ không tìm ra.
+function chunkWithTitle(title, chunk) {
+  const t = clean(String(title || '')).trim();
+  return t ? `[${t}]\n${chunk}` : chunk;
+}
+
 async function addDocument({ title, source, content }, onProgress) {
   const { rows } = await pg.query(
     'INSERT INTO documents (title, source) VALUES ($1, $2) RETURNING id',
@@ -238,11 +245,12 @@ async function addDocument({ title, source, content }, onProgress) {
   const docId = rows[0].id;
   const chunks = chunkText(clean(content));
   await runPool(chunks.length, async (i) => {
-    const vec = await embed('search_document: ' + chunks[i]);
+    const text = chunkWithTitle(title, chunks[i]);
+    const vec = await embed('search_document: ' + text);
     await pg.query(
       `INSERT INTO knowledge (source_type, source_id, chunk_index, content, embedding)
        VALUES ('document', $1, $2, $3, $4::vector)`,
-      [docId, i, chunks[i], toVectorLiteral(vec)]
+      [docId, i, text, toVectorLiteral(vec)]
     );
   }, onProgress);
   return { id: docId, chunks: chunks.length };
@@ -265,21 +273,27 @@ async function renameDocument(id, title) {
   await pg.query('UPDATE documents SET title=$1 WHERE id=$2', [clean(title), id]);
 }
 
-// Sửa nội dung tài liệu: xóa các đoạn cũ rồi chunk + embed lại (chạy nền qua job).
+// Sửa nội dung tài liệu: chunk + embed TOÀN BỘ trước, thành công hết mới thay các đoạn cũ.
+// Quan trọng: nếu xóa trước mà embed lỗi giữa chừng (Ollama tắt/mất model) thì tài liệu mất trắng.
 async function updateDocumentContent(id, content, onProgress) {
-  const exists = (await pg.query('SELECT id FROM documents WHERE id=$1', [id])).rows[0];
+  const exists = (await pg.query('SELECT id, title FROM documents WHERE id=$1', [id])).rows[0];
   if (!exists) throw new Error('Không tìm thấy tài liệu');
-  await pg.query(`DELETE FROM knowledge WHERE source_type='document' AND source_id=$1`, [id]);
   const chunks = chunkText(clean(content));
-  await runPool(chunks.length, async (i) => {
-    const vec = await embed('search_document: ' + chunks[i]);
+  const texts = chunks.map((c) => chunkWithTitle(exists.title, c));
+  const vecs = new Array(texts.length);
+  await runPool(texts.length, async (i) => {
+    vecs[i] = toVectorLiteral(await embed('search_document: ' + texts[i]));
+  }, onProgress);
+  // Tới đây mọi embedding đã sẵn sàng -> thay thế an toàn
+  await pg.query(`DELETE FROM knowledge WHERE source_type='document' AND source_id=$1`, [id]);
+  for (let i = 0; i < texts.length; i++) {
     await pg.query(
       `INSERT INTO knowledge (source_type, source_id, chunk_index, content, embedding)
        VALUES ('document', $1, $2, $3, $4::vector)`,
-      [id, i, chunks[i], toVectorLiteral(vec)]
+      [id, i, texts[i], vecs[i]]
     );
-  }, onProgress);
-  return { id, chunks: chunks.length };
+  }
+  return { id, chunks: texts.length };
 }
 
 // Lấy 1 tài liệu kèm nội dung đầy đủ (ghép các đoạn đã tách).
@@ -289,7 +303,10 @@ async function getDocument(id) {
   const chunks = (await pg.query(
     `SELECT content FROM knowledge WHERE source_type='document' AND source_id=$1 ORDER BY chunk_index`, [id]
   )).rows;
-  return { ...meta, content: chunks.map((c) => c.content).join('\n\n') };
+  // Bỏ tiền tố "[tên tài liệu]" đã gắn lúc lập chỉ mục để người dùng chỉ thấy nội dung gốc
+  const prefix = chunkWithTitle(meta.title, '');
+  const strip = (s) => (prefix && String(s).startsWith(prefix) ? String(s).slice(prefix.length) : s);
+  return { ...meta, content: chunks.map((c) => strip(c.content)).join('\n\n') };
 }
 
 // ---- Bản ghi LINH HOẠT ----
@@ -551,6 +568,26 @@ async function retrieveDevices(queryText, k = 25, allowSensitive = true) {
   return rows;
 }
 
+// Tìm theo TỪ KHÓA (mã sản phẩm: i-PRO, A4, R1...). Bổ trợ cho tìm ngữ nghĩa:
+// tài liệu tiếng Anh dài thường thua bản ghi ngắn khi so vector, nhưng khớp mã thì chuẩn.
+async function retrieveKeyword(tokens, k = 4, includeMemory = false, allowSensitive = true) {
+  if (!Array.isArray(tokens) || !tokens.length) return [];
+  const conds = [];
+  if (!includeMemory) conds.push("source_type <> 'memory'");
+  if (!allowSensitive) conds.push('sensitive = false');
+  const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
+  const params = tokens.map((t) => '%' + t + '%');
+  const scoreExpr = tokens.map((_, i) => `(content ILIKE $${i + 1})::int`).join(' + ');
+  const { rows } = await pg.query(
+    `SELECT content, source_type, (${scoreExpr}) AS kw
+     FROM knowledge ${where}
+     ORDER BY kw DESC, length(content) ASC
+     LIMIT ${Math.max(1, Math.min(20, Number(k) || 4))}`,
+    params
+  );
+  return rows.filter((r) => Number(r.kw) > 0);
+}
+
 async function retrieve(queryText, k = 5, includeMemory = false, allowSensitive = true) {
   let vec;
   try {
@@ -575,12 +612,17 @@ async function retrieve(queryText, k = 5, includeMemory = false, allowSensitive 
   return rows;
 }
 
+// Đóng database an toàn (gọi trước khi thoát tiến trình) — tránh hỏng WAL do bị cắt ngang.
+async function close() {
+  if (pg) { try { await pg.close(); } catch {} pg = null; }
+}
+
 module.exports = {
-  init,
+  init, close,
   ensureSession, saveMessage, getMessages, listSessions, deleteSession, saveMemory,
   addDocument, listDocuments, deleteDocument, renameDocument, getDocument, updateDocumentContent,
   addRecord, addRecordsBulk, listRecords, deleteRecord, updateRecord, reindexRecords,
-  retrieve, retrieveRecords, retrieveDevices, embedOk,
+  retrieve, retrieveKeyword, retrieveRecords, retrieveDevices, embedOk,
   getSensitiveFields, setSensitiveFields, reapplySensitive,
   getSetting, setSetting, getRules,
   getTemplates, setTemplates, search,

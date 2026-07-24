@@ -29,6 +29,10 @@ function startJob(runFn) {
 }
 const OLLAMA = process.env.OLLAMA_URL || 'http://localhost:11434';
 const MODEL = process.env.MODEL || 'qwen2.5:3b';
+// Cắt gọn ngữ cảnh RAG: prompt càng dài, máy chạy CPU càng chậm (CPU xử lý prompt rất tốn thời gian).
+const RAG_TOP = Number(process.env.RAG_TOP || 4);              // số đoạn tối đa đưa vào prompt
+const RAG_CHUNK_CHARS = Number(process.env.RAG_CHUNK_CHARS || 1200); // ký tự tối đa mỗi đoạn
+const NUM_CTX = Number(process.env.NUM_CTX || 4096);           // cửa sổ ngữ cảnh (nhỏ = nhanh hơn)
 
 const SYSTEM_PROMPT =
   'Bạn là AVT Chat Bot — trợ lý AI nội bộ của doanh nghiệp, chạy hoàn toàn trên máy chủ nội bộ. ' +
@@ -172,6 +176,7 @@ async function streamOllama(res, model, systemContent, chatMessages, prefix = ''
     messages: [{ role: 'system', content: systemContent }, ...chatMessages],
     stream: true,
     keep_alive: '30m',
+    options: { num_ctx: NUM_CTX }, // cửa sổ ngữ cảnh vừa đủ -> nhanh hơn nhiều khi chạy CPU
   };
   const upstream = await fetch(`${OLLAMA}/api/chat`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -249,6 +254,17 @@ async function ollamaJson(model, system, user) {
   return (j.message && j.message.content) || '';
 }
 
+// Rút các "mã đặc trưng" trong câu hỏi để tìm theo từ khóa: token có CHỮ SỐ (A4, R1, C21)
+// hoặc có CHỮ HOA giữa từ (i-PRO, ONVIF). Bỏ từ thường chung chung (camera, thông số...).
+function keyTokens(q) {
+  return String(q || '')
+    .split(/[^A-Za-z0-9\-]+/)
+    .map((s) => s.replace(/^-+|-+$/g, ''))
+    .filter((s) => s.length >= 2 && s.length <= 20)
+    .filter((s) => /\d/.test(s) || /[A-Z]/.test(s))
+    .slice(0, 5);
+}
+
 // ---- chat có RAG + bộ luật + lưu DB ----
 async function handleChat(req, res) {
   const { messages, sessionId, memory } = await readJson(req);
@@ -271,15 +287,32 @@ async function handleChat(req, res) {
   if (lastUser) {
     try {
       // Lấy nhiều ứng viên rồi chỉ giữ các đoạn liên quan nhất (giúp tài liệu lớn bớt nhiễu)
-      const hits = await db.retrieve(lastUser.content, 12, useMemory, allowSensitive);
-      const good = hits.filter((h) => h.score > 0.35).slice(0, 6);
+      // Model đám mây chạy nhanh + ngữ cảnh lớn -> lấy nhiều đoạn hơn cho câu trả lời đầy đủ.
+      // Model chạy máy (CPU) thì giữ ít đoạn để không kéo dài thời gian sinh câu trả lời.
+      const topN = isCloudModel(model) ? RAG_TOP * 3 : RAG_TOP;
+      const hits = await db.retrieve(lastUser.content, Math.max(12, topN + 6), useMemory, allowSensitive);
+      const vecGood = hits.filter((h) => h.score > 0.35);
+      // Tìm LAI: khớp mã sản phẩm (i-PRO, A4, R1...) trước, rồi mới tới kết quả ngữ nghĩa.
+      // Cần vì tài liệu tiếng Anh dài hay bị bản ghi ngắn (bảng giá) lấn át khi so vector.
+      const kwHits = await db.retrieveKeyword(keyTokens(lastUser.content), 3, useMemory, allowSensitive);
+      const seen = new Set();
+      const good = [];
+      for (const h of [...kwHits, ...vecGood]) {
+        const sig = String(h.content).slice(0, 80);
+        if (seen.has(sig)) continue;
+        seen.add(sig);
+        good.push(h);
+        if (good.length >= topN) break;
+      }
       if (good.length) {
         ragContext =
           '\n\n===== TRÍCH ĐOẠN LIÊN QUAN TỪ TÀI LIỆU NỘI BỘ =====\n' +
-          good.map((h, i) => `[${i + 1}] ${h.content}`).join('\n---\n') +
+          good.map((h, i) => `[${i + 1}] ${String(h.content).slice(0, RAG_CHUNK_CHARS)}`).join('\n---\n') +
           '\n===== HẾT TRÍCH ĐOẠN =====\n' +
           'QUY TẮC TRẢ LỜI: Chỉ dựa vào các trích đoạn trên. Trả lời ĐÚNG TRỌNG TÂM câu hỏi, ' +
           'ngắn gọn, không lan man, không thêm thông tin ngoài trích đoạn. ' +
+          'Tài liệu có thể bằng tiếng Anh nhưng LUÔN trả lời bằng tiếng Việt. ' +
+          'Không in ra số hiệu trích đoạn dạng [1], [2] trong câu trả lời. ' +
           'Nếu các trích đoạn KHÔNG chứa câu trả lời, hãy nói rõ: "Tôi không tìm thấy thông tin này trong tài liệu."';
       } else if (!(await db.embedOk())) {
         // Không tra được vì embedding lỗi -> cảnh báo rõ, tránh bịa trong im lặng
@@ -521,6 +554,18 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   try {
     // API
+    // Tắt server AN TOÀN: đóng database trước rồi mới thoát (tránh hỏng WAL như khi kill cứng).
+    if (req.method === 'POST' && p === '/api/shutdown') {
+      // Chỉ nhận lệnh từ chính máy chủ, tránh máy khác trong mạng tắt nhầm dịch vụ
+      const ip = req.socket.remoteAddress || '';
+      if (!/^(::1|::ffff:127\.|127\.)/.test(ip)) return sendJson(res, 403, { error: 'Chỉ tắt được từ máy chủ' });
+      sendJson(res, 200, { ok: true });
+      setTimeout(async () => {
+        try { await db.close(); console.log('Đã đóng database an toàn.'); } catch (e) { console.error('Đóng DB lỗi:', e.message); }
+        process.exit(0);
+      }, 100);
+      return;
+    }
     if (req.method === 'POST' && p === '/api/chat') return await handleChat(req, res);
     if (req.method === 'POST' && p === '/api/advise') return await handleAdvise(req, res);
     if (req.method === 'POST' && p === '/api/export/xlsx') return await handleExportXlsx(req, res);
