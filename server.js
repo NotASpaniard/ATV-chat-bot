@@ -271,6 +271,160 @@ function pickName(data, collection) {
 }
 function fmtVnd(n) { return Number(n).toLocaleString('vi-VN'); }
 
+// ================== BÁO GIÁ ==================
+// Luồng: gõ yêu cầu -> tìm ứng viên -> NGƯỜI DÙNG SOÁT -> chọn bộ cột -> dựng bảng.
+// Nguyên tắc bảo mật: cột nhạy cảm CHỈ lấy từ DB, không bao giờ gửi vào prompt của model đám mây.
+
+const normCol = (s) => String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '')
+  .replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase().replace(/\s+/g, ' ').trim();
+
+// Cột nào server tự tính, không hỏi model
+const isQtyCol = (c) => /^(so luong|sl|qty|quantity)$/.test(normCol(c));
+const isTotalCol = (c) => /(thanh tien|tong tien|total)/.test(normCol(c));
+const isPriceCol = (c) => /(don gia|gia ban|gia|price)/.test(normCol(c)) && !isTotalCol(c);
+const isNameCol = (c) => /(ten|name|model|san pham|thiet bi)/.test(normCol(c));
+
+// Tìm giá trị của một cột trong dữ liệu bản ghi (so tên cột đã chuẩn hóa, chấp nhận khớp một phần)
+function valueForColumn(fields, col) {
+  const want = normCol(col);
+  for (const [k, v] of Object.entries(fields || {})) {
+    if (normCol(k) === want) return v;
+  }
+  for (const [k, v] of Object.entries(fields || {})) {
+    const nk = normCol(k);
+    if (nk.includes(want) || want.includes(nk)) return v;
+  }
+  return null;
+}
+
+// Nhờ model trích các cột còn thiếu TỪ TÀI LIỆU. Bắt buộc trả null khi không thấy — cấm bịa.
+async function extractFromDoc(model, docTitle, docText, columns) {
+  if (!columns.length || !docText.trim()) return {};
+  const system =
+    'Bạn trích thông tin từ tài liệu kỹ thuật. Chỉ dùng đúng những gì có TRONG tài liệu. ' +
+    'TUYỆT ĐỐI KHÔNG suy đoán, không bịa, không lấy kiến thức ngoài tài liệu. ' +
+    'Nếu tài liệu không nêu rõ một mục nào thì trả về null cho mục đó. ' +
+    'Trả về DUY NHẤT một JSON dạng {"<tên mục>": "<giá trị ngắn gọn tiếng Việt>" hoặc null, ...} ' +
+    'với đúng các mục sau: ' + JSON.stringify(columns) +
+    '\n\n===== TÀI LIỆU: ' + docTitle + ' =====\n' + docText.slice(0, 24000);
+  try {
+    const raw = isCloudModel(model)
+      ? await geminiJson(model, system, 'Trích các mục trên từ tài liệu.')
+      : await ollamaJson(model, system, 'Trích các mục trên từ tài liệu.');
+    const o = JSON.parse(raw);
+    return o && typeof o === 'object' ? o : {};
+  } catch (e) {
+    console.error('Trích tài liệu lỗi:', e.message);
+    return {};
+  }
+}
+
+// Bước 1: tìm ứng viên cho người dùng soát
+async function handleQuoteFind(req, res) {
+  const { requirement } = await readJson(req);
+  if (!requirement || !requirement.trim()) return sendJson(res, 400, { error: 'Chưa nhập yêu cầu' });
+  const items = await db.findQuoteCandidates(requirement, keyTokens(requirement), 12);
+  if (!items.length && !(await db.embedOk())) {
+    return sendJson(res, 200, { items: [], warning: 'Hệ thống tra cứu (bge-m3) đang lỗi nên chưa tìm được gì. Kiểm tra Ollama.' });
+  }
+  return sendJson(res, 200, { items });
+}
+
+// Bước 2: dựng bảng từ những mục người dùng đã xác nhận
+async function handleQuoteBuild(req, res) {
+  const { items, columns, customer } = await readJson(req);
+  if (!Array.isArray(items) || !items.length) return sendJson(res, 400, { error: 'Chưa chọn mục nào' });
+  const cols = (Array.isArray(columns) && columns.length ? columns : ['Tên thiết bị', 'Số lượng', 'Đơn giá', 'Thành tiền'])
+    .map((c) => String(c).trim()).filter(Boolean);
+
+  const model = await activeModel();
+  const senSet = await db.getSensitiveFieldSet();
+  const isSensitiveCol = (c) => senSet.has(normCol(c));
+
+  const rows = [];
+  const notes = [];
+  // Đọc bản ghi một lần rồi tra trong bộ nhớ, tránh truy vấn lặp cho từng dòng
+  const allRecords = new Map((await db.listRecords()).map((r) => [Number(r.id), r]));
+  for (const it of items) {
+    const qty = Math.max(1, Math.min(100000, Math.floor(Number(it.qty) || 1)));
+    const cells = {};
+    let fields = {};
+    let name = it.title || '';
+    let docText = '';
+
+    if (it.kind === 'record') {
+      const rec = allRecords.get(Number(it.id));
+      if (!rec) { notes.push(`Không còn bản ghi #${it.id}`); continue; }
+      name = name || pickName(rec.data, rec.collection);
+      // Gộp cột thường + cột nhạy cảm đã tách ra bản ghi riêng (đọc thẳng DB, không qua model)
+      fields = { ...rec.data, ...(await db.getSensitiveFieldsFor(name)) };
+    } else {
+      docText = await db.getDocumentText(it.id);
+      // Tài liệu cũng có thể có bản ghi giá cùng tên -> lấy cột nhạy cảm từ DB
+      fields = await db.getSensitiveFieldsFor(name);
+    }
+
+    // Điền trước những cột lấy được từ dữ liệu có sẵn
+    const missing = [];
+    for (const c of cols) {
+      if (isQtyCol(c)) { cells[c] = qty; continue; }
+      if (isTotalCol(c)) { cells[c] = null; continue; }   // tính sau, ở dưới
+      const v = valueForColumn(fields, c);
+      if (v != null && v !== '') { cells[c] = v; continue; }
+      // Bản ghi: cột tên lấy luôn tên bản ghi. Tài liệu: để model trích tên model thật
+      // trong nội dung, vì tên file thường lộn xộn ("WV-X22500A-V3L _ i-PRO A4_R1_260615_0 (1)").
+      if (isNameCol(c) && it.kind === 'record') { cells[c] = name; continue; }
+      cells[c] = null;
+      // Cột NHẠY CẢM mà dữ liệu không có thì để trống — tuyệt đối không nhờ model đám mây đoán
+      if (!isSensitiveCol(c)) missing.push(c);
+    }
+
+    // Còn thiếu và có tài liệu -> nhờ model trích (chỉ cột KHÔNG nhạy cảm)
+    if (missing.length && docText) {
+      const got = await extractFromDoc(model, name, docText, missing);
+      for (const c of missing) {
+        const v = got[c];
+        if (v != null && String(v).trim() !== '' && String(v).toLowerCase() !== 'null') cells[c] = v;
+      }
+    }
+
+    // Model không trích được tên thì vẫn phải có gì đó để hiển thị
+    for (const c of cols) if (isNameCol(c) && !cells[c]) cells[c] = name;
+
+    // Server tính tiền, không để model tính
+    const priceCol = cols.find(isPriceCol);
+    const price = priceCol ? parseNum(cells[priceCol]) : NaN;
+    for (const c of cols) {
+      if (!isTotalCol(c)) continue;
+      cells[c] = isNaN(price) ? null : price * qty;
+    }
+
+    rows.push({ kind: it.kind, id: it.id, name, qty, cells,
+      sensitiveCols: cols.filter(isSensitiveCol) });
+  }
+
+  // Tổng cộng cho các cột tiền
+  const totals = {};
+  for (const c of cols) {
+    if (!isTotalCol(c)) continue;
+    totals[c] = rows.reduce((s, r) => s + (Number(r.cells[c]) || 0), 0);
+  }
+
+  // Ô nào trống thì nói rõ, để người dùng biết mà điền tay thay vì tưởng là 0
+  const blanks = [];
+  for (const r of rows) for (const c of cols) {
+    if (r.cells[c] == null || r.cells[c] === '') blanks.push(`${r.name} — ${c}`);
+  }
+  if (blanks.length) notes.push('Không tìm thấy dữ liệu cho: ' + blanks.slice(0, 12).join('; ')
+    + (blanks.length > 12 ? ` (và ${blanks.length - 12} ô nữa)` : ''));
+
+  return sendJson(res, 200, {
+    customer: customer || '', columns: cols, rows, totals, notes,
+    sensitiveColumns: cols.filter(isSensitiveCol),
+    model,
+  });
+}
+
 // Gọi Ollama ở chế độ trả JSON (không stream) để lấy lựa chọn của model.
 async function ollamaJson(model, system, user) {
   const r = await fetch(`${OLLAMA}/api/chat`, {
@@ -600,6 +754,17 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && p === '/api/chat') return await handleChat(req, res);
     if (req.method === 'POST' && p === '/api/advise') return await handleAdvise(req, res);
+    // ---- Báo giá: tìm ứng viên -> soát -> dựng bảng ----
+    if (req.method === 'POST' && p === '/api/quote/find') return await handleQuoteFind(req, res);
+    if (req.method === 'POST' && p === '/api/quote/build') return await handleQuoteBuild(req, res);
+    if (req.method === 'GET' && p === '/api/quote/forms')
+      return sendJson(res, 200, { forms: await db.getQuoteForms() });
+    if (req.method === 'POST' && p === '/api/quote/forms') {
+      const { forms } = await readJson(req);
+      if (!Array.isArray(forms)) return sendJson(res, 400, { error: 'Thiếu danh sách form' });
+      await db.setQuoteForms(forms);
+      return sendJson(res, 200, { ok: true });
+    }
     if (req.method === 'POST' && p === '/api/export/xlsx') return await handleExportXlsx(req, res);
 
     if (req.method === 'GET' && p === '/api/config')
@@ -818,7 +983,8 @@ const server = http.createServer(async (req, res) => {
 
     // file tĩnh
     if (req.method === 'GET') {
-      let fp = p === '/' ? '/index.html' : p;
+      // Trang chủ giờ là BÁO GIÁ; trang chat đầy đủ vẫn vào được ở /chat.html
+      let fp = p === '/' ? '/quote.html' : (p === '/chat.html' ? '/index.html' : p);
       fp = path.join(__dirname, 'public', decodeURIComponent(fp.split('?')[0]));
       if (!fp.startsWith(path.join(__dirname, 'public'))) {
         res.writeHead(403); return res.end('Forbidden');

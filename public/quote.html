@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AVT — Báo giá</title>
+  <script>
+    (function () { var t = localStorage.getItem('avt-theme'); if (['light','dark','coffee'].indexOf(t) < 0) t = 'light'; document.documentElement.setAttribute('data-theme', t); })();
+  </script>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/quote.css" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#6a83ef" />
+</head>
+<body>
+  <div id="shell">
+    <aside id="sidebar">
+      <div class="side-brand">
+        <span class="logo" aria-hidden="true"></span>
+        <strong>AVT</strong>
+      </div>
+
+      <button id="new-quote" class="side-new" type="button" title="Bắt đầu báo giá mới">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span>Báo giá mới</span>
+      </button>
+
+      <nav class="side-nav">
+        <a class="side-link active" href="/">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>
+          <span>Báo giá</span>
+        </a>
+        <a class="side-link" href="/admin.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M4 12h16M4 18h7"/><circle cx="17" cy="6" r="2"/><circle cx="14" cy="18" r="2"/></svg>
+          <span>Quản trị dữ liệu</span>
+        </a>
+      </nav>
+
+      <div class="side-tools">
+        <div class="tool-sq tool-split">
+          <button id="theme-btn" class="tool-half" type="button" title="Đổi giao diện"></button>
+          <button id="bg-btn" class="tool-half" type="button" title="Nền &amp; độ mờ cho theme này">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H7a1.6 1.6 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V7a1.6 1.6 0 0 0 1.5 1H23a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+          </button>
+        </div>
+        <button id="status-btn" class="tool-sq icon-btn" type="button" title="Trạng thái hệ thống">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+        </button>
+      </div>
+
+      <div class="side-foot">
+        <span class="status-dot" title="Đang hoạt động"></span>
+        <button id="model-tag" class="model-tag" type="button" title="Model đang dùng">…</button>
+        <button id="help-btn" class="help-btn" type="button" title="Xem lại hướng dẫn sử dụng">HDSD</button>
+      </div>
+    </aside>
+
+    <main id="main" class="quote-main">
+
+      <!-- BƯỚC 1: mô tả yêu cầu -->
+      <section class="q-card" id="step-ask">
+        <div class="q-step"><span class="q-num">1</span> Cần báo giá gì?</div>
+        <input id="q-customer" placeholder="Tên khách hàng (tùy chọn)" />
+        <textarea id="q-req" rows="3" placeholder="VD: 8 camera AVT-C21 2MP ngoài trời, 1 đầu ghi 16 kênh, 1 ổ cứng lưu 30 ngày&#10;hoặc: lấy thông số camera i-PRO A4 R1"></textarea>
+        <div class="q-actions">
+          <button id="q-find" class="btn-primary" type="button">Tìm trong dữ liệu</button>
+          <span class="status" id="q-find-status"></span>
+        </div>
+      </section>
+
+      <!-- BƯỚC 2: soát lại trước khi dựng bảng -->
+      <section class="q-card hidden" id="step-check">
+        <div class="q-step"><span class="q-num">2</span> Đúng những thứ này chứ?</div>
+        <p class="q-sub">Bỏ tick những mục không phải thứ bạn cần. Đây là bước chặn lấy nhầm sản phẩm.</p>
+        <div id="q-cands"></div>
+        <div class="q-form-pick">
+          <label for="q-form">Trình bày theo</label>
+          <select id="q-form"></select>
+          <button id="q-form-edit" class="btn-ghost" type="button" title="Sửa các cột của form này">Sửa cột</button>
+        </div>
+        <div class="q-actions">
+          <button id="q-build" class="btn-primary" type="button">Dựng bảng</button>
+          <span class="status" id="q-build-status"></span>
+        </div>
+      </section>
+
+      <!-- BƯỚC 3: bảng kết quả -->
+      <section class="q-card hidden" id="step-table">
+        <div class="q-step"><span class="q-num">3</span> Bảng báo giá</div>
+        <div id="q-warn" class="q-warn hidden"></div>
+        <div class="q-table-wrap"><table id="q-table"></table></div>
+        <div class="q-actions">
+          <button id="q-xlsx" class="btn-primary" type="button">Xuất Excel</button>
+          <button id="q-copy" class="btn-ghost" type="button">Sao chép bảng</button>
+          <span class="status" id="q-out-status"></span>
+        </div>
+      </section>
+
+      <!-- Ô hỏi nhanh: nhỏ, chỉ để tra thêm chi tiết trong tài liệu -->
+      <section class="q-card q-ask" id="step-chat">
+        <button type="button" id="q-chat-toggle" class="q-ask-head">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/></svg>
+          <span>Hỏi nhanh về tài liệu</span>
+          <svg class="q-ask-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+        <div id="q-chat-body" class="hidden">
+          <div id="q-chat-log"></div>
+          <form id="q-chat-form">
+            <input id="q-chat-input" placeholder="VD: camera i-PRO A4 R1 dùng nguồn gì?" />
+            <button type="submit" class="btn-primary" title="Gửi">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+            </button>
+          </form>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- POPUP: sửa cột của form trình bày -->
+  <div id="form-modal" class="modal-overlay hidden">
+    <div class="modal-panel">
+      <div class="modal-head">
+        <h3>Cột của form trình bày</h3>
+        <button type="button" id="form-close" class="modal-close" title="Đóng">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <label>Tên form</label>
+        <input id="form-name" />
+        <label>Các cột — mỗi dòng một cột, thứ tự đúng như trong bảng</label>
+        <textarea id="form-cols" rows="8" spellcheck="false"></textarea>
+        <p class="q-sub">Cột <b>Số lượng</b> và <b>Thành tiền</b> do hệ thống tự tính. Cột trùng tên trường nhạy cảm chỉ lấy từ dữ liệu nội bộ, không hỏi model đám mây.</p>
+        <div class="q-actions">
+          <button id="form-save" class="btn-primary" type="button">Lưu form</button>
+          <span class="status" id="form-status"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="status-modal" class="modal-overlay hidden">
+    <div class="modal-panel">
+      <div class="modal-head">
+        <h3>Trạng thái hệ thống</h3>
+        <button type="button" id="status-close" class="modal-close" title="Đóng">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" id="status-modal-body">Đang tải…</div>
+    </div>
+  </div>
+
+  <div id="tour" class="tour hidden">
+    <div class="tour-hole" id="tour-hole"></div>
+    <div class="tour-box" id="tour-box">
+      <div class="tour-arrow" id="tour-arrow"></div>
+      <div class="tour-step" id="tour-step"></div>
+      <h4 id="tour-title"></h4>
+      <p id="tour-text"></p>
+      <div class="tour-foot">
+        <label class="tour-check"><input type="checkbox" id="tour-noshow" checked /> Không hiển thị lại</label>
+        <button type="button" id="tour-close" class="tour-close-btn">Đóng hướng dẫn</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/theme.js"></script>
+  <script src="/dialog.js"></script>
+  <script src="/quote.js"></script>
+  <script src="/tour.js"></script>
+</body>
+</html>

@@ -551,6 +551,27 @@ async function getTemplates() {
 }
 async function setTemplates(arr) { await setSetting('templates', JSON.stringify(Array.isArray(arr) ? arr : [])); }
 
+// ---- FORM TRÌNH BÀY BÁO GIÁ: mỗi form là một bộ cột ----
+// Có sẵn vài form thông dụng để dùng được ngay; người dùng tự thêm/sửa được.
+const DEFAULT_QUOTE_FORMS = JSON.stringify([
+  { id: 'bao-gia', name: 'Báo giá thiết bị',
+    columns: ['Tên thiết bị', 'Số lượng', 'Đơn giá', 'Thành tiền'] },
+  { id: 'bao-gia-bh', name: 'Báo giá kèm bảo hành',
+    columns: ['Tên thiết bị', 'Số lượng', 'Đơn giá', 'Thành tiền', 'Bảo hành'] },
+  { id: 'so-sanh', name: 'So sánh thông số kỹ thuật',
+    columns: ['Tên thiết bị', 'Độ phân giải', 'Cảm biến', 'Tầm xa hồng ngoại', 'Chuẩn nén'] },
+]);
+async function getQuoteForms() {
+  const v = await getSetting('quote_forms', DEFAULT_QUOTE_FORMS);
+  try {
+    const arr = JSON.parse(v);
+    return Array.isArray(arr) && arr.length ? arr : JSON.parse(DEFAULT_QUOTE_FORMS);
+  } catch { return JSON.parse(DEFAULT_QUOTE_FORMS); }
+}
+async function setQuoteForms(arr) {
+  await setSetting('quote_forms', JSON.stringify(Array.isArray(arr) ? arr : []));
+}
+
 // ---- Tìm kiếm lịch sử chat + tài liệu ----
 async function search(q, limit = 30) {
   const like = '%' + q + '%';
@@ -640,6 +661,126 @@ async function retrieve(queryText, k = 5, includeMemory = false, allowSensitive 
   return rows;
 }
 
+// ---- BÁO GIÁ: tìm ứng viên để NGƯỜI DÙNG SOÁT trước khi dựng bảng ----
+// Khác retrieve() ở chỗ trả kèm NGUỒN GỐC (bản ghi nào / tài liệu nào) để hiện ra đối chiếu,
+// tránh dựng bảng từ nhầm sản phẩm mà không ai biết.
+async function findQuoteCandidates(queryText, tokens = [], limit = 12) {
+  const out = new Map(); // khóa "kind:id" -> ứng viên, tránh trùng khi một tài liệu khớp nhiều đoạn
+
+  const push = (kind, id, score, extra) => {
+    const key = kind + ':' + id;
+    const cur = out.get(key);
+    if (cur) { if (score > cur.score) cur.score = score; return; }
+    out.set(key, { kind, id, score, ...extra });
+  };
+
+  // Bản ghi nhạy cảm là NỬA BỊ TÁCH RA của một sản phẩm, không phải sản phẩm riêng.
+  // Nếu để nó thành ứng viên thì người dùng thấy trùng tên hai lần. Giá trị của nó
+  // được gộp lại lúc dựng bảng qua getSensitiveFieldsFor().
+  const senIds = new Set(
+    (await pg.query('SELECT id FROM records WHERE sensitive = true')).rows.map((r) => String(r.id))
+  );
+  const skip = (kind, id) => kind === 'record' && senIds.has(String(id));
+
+  // 1) Khớp theo mã/từ khóa (i-PRO, A4, C21...) — chắc ăn nhất khi khách gọi đúng tên model
+  if (tokens.length) {
+    const params = tokens.map((t) => '%' + t + '%');
+    const scoreExpr = tokens.map((_, i) => `(content ILIKE $${i + 1})::int`).join(' + ');
+    const { rows } = await pg.query(
+      `SELECT source_type, source_id, content, (${scoreExpr}) AS kw
+       FROM knowledge WHERE source_type <> 'memory'
+       ORDER BY kw DESC, length(content) ASC LIMIT 40`, params);
+    for (const r of rows) {
+      if (Number(r.kw) <= 0 || skip(r.source_type, r.source_id)) continue;
+      push(r.source_type, r.source_id, 0.9 + Number(r.kw) / 100, { snippet: r.content });
+    }
+  }
+
+  // 2) Khớp theo ngữ nghĩa — bắt được cả khi khách mô tả bằng lời ("camera ngoài trời nhìn đêm")
+  try {
+    const vec = await embed('search_query: ' + queryText);
+    const { rows } = await pg.query(
+      `SELECT source_type, source_id, content, 1 - (embedding <=> $1::vector) AS score
+       FROM knowledge WHERE source_type <> 'memory'
+       ORDER BY embedding <=> $1::vector LIMIT 30`,
+      [toVectorLiteral(vec)]
+    );
+    for (const r of rows) {
+      if (Number(r.score) < 0.4 || skip(r.source_type, r.source_id)) continue;
+      push(r.source_type, r.source_id, Number(r.score), { snippet: r.content });
+    }
+  } catch { /* embedding lỗi thì vẫn còn kết quả từ khóa */ }
+
+  // 3) Gắn thông tin nhận dạng để người dùng soát được: bản ghi thì lấy data, tài liệu thì lấy tên
+  const list = [...out.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+  const recIds = list.filter((x) => x.kind === 'record').map((x) => x.id);
+  const docIds = list.filter((x) => x.kind === 'document').map((x) => x.id);
+
+  const recMap = new Map();
+  if (recIds.length) {
+    const { rows } = await pg.query(
+      `SELECT id, collection, data, sensitive FROM records WHERE id = ANY($1::bigint[])`, [recIds]);
+    rows.forEach((r) => recMap.set(String(r.id), r));
+  }
+  const docMap = new Map();
+  if (docIds.length) {
+    const { rows } = await pg.query(
+      `SELECT id, title FROM documents WHERE id = ANY($1::bigint[])`, [docIds]);
+    rows.forEach((r) => docMap.set(String(r.id), r));
+  }
+
+  return list.map((x) => {
+    if (x.kind === 'record') {
+      const r = recMap.get(String(x.id));
+      if (!r) return null;
+      return { kind: 'record', id: Number(x.id), score: x.score,
+        title: pickRecordName(r.data, r.collection), group: r.collection,
+        sensitive: r.sensitive, fields: r.data };
+    }
+    const d = docMap.get(String(x.id));
+    if (!d) return null;
+    // Bỏ tiền tố "[tên tài liệu]" gắn lúc lập chỉ mục — hiện ra chỉ tổ rối mắt
+    const prefix = chunkWithTitle(d.title, '');
+    let snip = String(x.snippet || '');
+    if (prefix && snip.startsWith(prefix)) snip = snip.slice(prefix.length);
+    return { kind: 'document', id: Number(x.id), score: x.score,
+      title: d.title, group: 'Tài liệu', sensitive: false, snippet: snip };
+  }).filter(Boolean);
+}
+
+// Tên hiển thị của bản ghi: ưu tiên cột có chữ "tên", không thì lấy cột đầu có giá trị
+function pickRecordName(data, collection) {
+  for (const [k, v] of Object.entries(data || {})) {
+    if (/ten|name|model|san pham/.test(normKey(k)) && v) return String(v);
+  }
+  for (const v of Object.values(data || {})) if (v) return String(v);
+  return collection || 'Không tên';
+}
+
+// Cột nhạy cảm của một sản phẩm nằm ở BẢN GHI TÁCH RIÊNG (xem splitBySensitive),
+// nối lại với bản ghi thường qua trường định danh (tên sản phẩm). Hàm này gom lại giúp.
+async function getSensitiveFieldsFor(name) {
+  const key = normKey(name);
+  if (!key) return {};
+  const { rows } = await pg.query('SELECT data FROM records WHERE sensitive = true');
+  const merged = {};
+  for (const r of rows) {
+    const matches = Object.values(r.data || {}).some((v) => normKey(v) === key);
+    if (!matches) continue;
+    for (const [k, v] of Object.entries(r.data || {})) {
+      if (normKey(v) === key) continue;  // bỏ chính trường định danh
+      merged[k] = v;
+    }
+  }
+  return merged;
+}
+
+// Lấy toàn văn tài liệu (đã bỏ tiền tố tên) để trích số liệu khi dựng bảng
+async function getDocumentText(id) {
+  const doc = await getDocument(id);
+  return doc ? doc.content : '';
+}
+
 // Đóng database an toàn (gọi trước khi thoát tiến trình) — tránh hỏng WAL do bị cắt ngang.
 async function close() {
   if (pg) { try { await pg.close(); } catch {} pg = null; }
@@ -651,7 +792,9 @@ module.exports = {
   addDocument, listDocuments, deleteDocument, renameDocument, getDocument, updateDocumentContent,
   addRecord, addRecordsBulk, listRecords, deleteRecord, updateRecord, reindexRecords, listFieldNames,
   retrieve, retrieveKeyword, retrieveRecords, retrieveDevices, embedOk,
+  findQuoteCandidates, getDocumentText, getSensitiveFieldSet, getSensitiveFieldsFor,
   getSensitiveFields, setSensitiveFields, reapplySensitive,
   getSetting, setSetting, getRules,
   getTemplates, setTemplates, search,
+  getQuoteForms, setQuoteForms,
 };
